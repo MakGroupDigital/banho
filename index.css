@@ -17,12 +17,31 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Fix scroll sur mobile pour les pages de profil */
+.min-h-screen {
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height pour mobile */
+}
+
 /* Amélioration du scroll sur mobile */
 .overflow-y-auto,
 .overflow-auto {
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
   overscroll-behavior-y: contain;
+}
+
+/* Scroll container pour les pages */
+.scroll-container {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  height: 100%;
+}
+
+/* Safe area padding pour mobile */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 24px);
 }
 
 /* Performance du scroll */
@@ -126,6 +145,15 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
   scroll-behavior: smooth;
+  /* Empêcher le scroll vertical pendant le scroll horizontal */
+  overscroll-behavior-x: contain;
+}
+
+/* Fix pour le scroll horizontal des catégories sur mobile */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
 }
 
 /* Snap scroll for carousel */

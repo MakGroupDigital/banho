@@ -1613,12 +1613,16 @@ export default function App() {
       </div>
 
       {/* Categories avec icônes personnalisées */}
-      <div className="flex gap-3 overflow-x-auto mb-8 no-scrollbar pb-2">
+      <div 
+        className="flex gap-3 overflow-x-auto mb-8 no-scrollbar pb-2"
+        style={{ touchAction: 'pan-x' }}
+        onTouchMove={(e) => e.stopPropagation()}
+      >
         {categories.map((cat, index) => (
           <button 
             key={cat.name} 
             onClick={() => setSelectedCategory(cat.name)}
-            className={`px-4 py-3 rounded-2xl text-xs font-bold whitespace-nowrap shadow-sm active:scale-95 transition-all flex items-center gap-2 ${
+            className={`px-4 py-3 rounded-2xl text-xs font-bold whitespace-nowrap shadow-sm active:scale-95 transition-all flex items-center gap-2 flex-shrink-0 ${
               selectedCategory === cat.name ? 'bg-emerald-900 text-white' : 'bg-white border border-gray-200'
             }`}
           >
@@ -1722,17 +1726,17 @@ export default function App() {
         {/* Carte Banho Gold avec animation flip */}
         <div style={{perspective: '1000px'}} className="mb-10">
           <div 
-            className={`relative w-full h-56 transition-all duration-700 cursor-pointer`}
+            className={`relative w-full h-56 transition-all duration-700`}
             style={{
               transformStyle: 'preserve-3d',
               transform: isCardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
             }}
-            onClick={() => setIsCardFlipped(!isCardFlipped)}
           >
             {/* Face avant de la carte - Design original */}
             <div 
-              className="absolute inset-0 bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-6 rounded-[1.5rem] shadow-2xl relative overflow-hidden text-white"
+              className="absolute inset-0 bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-6 rounded-[1.5rem] shadow-2xl relative overflow-hidden text-white cursor-pointer"
               style={{backfaceVisibility: 'hidden'}}
+              onClick={() => setIsCardFlipped(true)}
             >
               <div className="absolute -top-20 -right-20 w-64 h-64 bg-orange-500/10 rounded-full blur-[80px]" />
               
@@ -1772,11 +1776,12 @@ export default function App() {
 
             {/* Face arrière de la carte - Toutes les nouvelles informations */}
             <div 
-              className="absolute inset-0 bg-gradient-to-br from-gray-800 via-gray-900 to-black p-6 rounded-[1.5rem] shadow-2xl text-white"
+              className="absolute inset-0 bg-gradient-to-br from-gray-800 via-gray-900 to-black p-6 rounded-[1.5rem] shadow-2xl text-white cursor-pointer"
               style={{
                 backfaceVisibility: 'hidden',
                 transform: 'rotateY(180deg)'
               }}
+              onClick={() => setIsCardFlipped(false)}
             >
               <div className="h-full flex flex-col justify-between">
                 <div>
@@ -2069,7 +2074,7 @@ export default function App() {
     switch (activeProfilePage) {
       case 'orders':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Mes commandes" />
             <div className="px-6">
               {/* Tabs */}
@@ -2124,7 +2129,7 @@ export default function App() {
 
       case 'sales':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Mes ventes" />
             <div className="px-6">
               {/* Tabs */}
@@ -2181,7 +2186,7 @@ export default function App() {
 
       case 'favorites':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Mes favoris" />
             <div className="px-6">
               {loadingFavorites ? (
@@ -2221,7 +2226,7 @@ export default function App() {
 
       case 'wallet':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="BanhoPay & Paiements" />
             <div className="px-6">
               {/* Solde */}
@@ -2286,7 +2291,7 @@ export default function App() {
 
       case 'edit-profile':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Modifier le profil" />
             <div className="px-6">
               {/* Photo de profil */}
@@ -2399,7 +2404,7 @@ export default function App() {
 
       case 'notifications':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Notifications" />
             <div className="px-6">
               {/* Bouton marquer tout comme lu */}
@@ -2479,7 +2484,7 @@ export default function App() {
 
       case 'security':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Sécurité & Confidentialité" />
             <div className="px-6">
               <div className="space-y-4">
@@ -2516,7 +2521,7 @@ export default function App() {
 
       case 'support':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Aide & Support" />
             <div className="px-6">
               {/* Contact rapide */}
@@ -2554,7 +2559,7 @@ export default function App() {
 
       case 'settings':
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title="Paramètres généraux" />
             <div className="px-6">
               <div className="space-y-6">
@@ -2613,7 +2618,7 @@ export default function App() {
       // Pages en développement
       default:
         return (
-          <div className="min-h-screen bg-gray-50 pb-24">
+          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
             <PageHeader title={activeProfilePage || 'Page'} />
             <div className="px-6 text-center py-12">
               <p className="text-gray-500">Page en cours de développement</p>
