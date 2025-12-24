@@ -1,0 +1,8 @@
+{
+  "name": "Banho - Zando na tshombo",
+  "description": "A premium, decentralized e-commerce platform integrating local financial realities. Shop, sell, and manage your wallet seamlessly.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

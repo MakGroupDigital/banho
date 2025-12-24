@@ -1,0 +1,1054 @@
+
+import React, { useState, useEffect } from 'react';
+import { ShoppingBag, Wallet, MessageSquare, User as UserIcon, Eye, EyeOff, ArrowUpRight, Search } from 'lucide-react';
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('home');
+  const [showSplash, setShowSplash] = useState(true);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [cart, setCart] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('Tous');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+
+  // Splash Screen avec animation de chargement
+  const SplashScreen = () => {
+    useEffect(() => {
+      const timer = setTimeout(() => setShowSplash(false), 3000);
+      return () => clearTimeout(timer);
+    }, []);
+
+    return (
+      <div className="fixed inset-0 bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-950 flex flex-col items-center justify-center z-[200]">
+        <div className="relative mb-8">
+          {/* Logo Banho */}
+          <div className="w-32 h-32 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-emerald-900/50 animate-pulse">
+            <img src="/logo-banho.png" alt="Banho" className="w-20 h-20 object-contain" />
+          </div>
+          
+          {/* Cercles de chargement animés */}
+          <div className="absolute -inset-4 flex items-center justify-center">
+            <div className="w-40 h-40 border-4 border-orange-500/30 rounded-full animate-spin border-t-orange-500"></div>
+          </div>
+          <div className="absolute -inset-2 flex items-center justify-center">
+            <div className="w-36 h-36 border-2 border-white/20 rounded-full animate-spin animate-reverse border-t-white/60" style={{animationDuration: '2s'}}></div>
+          </div>
+        </div>
+
+        <h1 className="text-4xl font-black text-white mb-2 tracking-tight">Banho</h1>
+        <p className="text-orange-400 font-semibold text-sm uppercase tracking-[0.3em] mb-8">Zando na tshombo</p>
+        
+        {/* Barre de progression */}
+        <div className="w-64 h-1 bg-white/20 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-orange-500 to-white rounded-full animate-pulse" style={{width: '100%', animation: 'loading 3s ease-in-out'}}></div>
+        </div>
+        <p className="text-white/60 text-xs mt-4 animate-pulse">Chargement en cours...</p>
+      </div>
+    );
+  };
+
+  const HomeView = () => {
+    const products = [
+      { id: 1, name: 'MacBook Air M2', price: 1200, image: 'https://picsum.photos/seed/macbook/400/400', rating: 4.8, category: 'Électronique', description: 'Ordinateur portable ultra-fin avec puce M2, 8GB RAM, 256GB SSD. Parfait pour le travail et la création.', seller: 'TechStore RDC' },
+      { id: 2, name: 'iPhone 15 Pro', price: 999, image: 'https://picsum.photos/seed/iphone/400/400', rating: 4.9, category: 'Électronique', description: 'Smartphone dernière génération avec caméra 48MP, puce A17 Pro, écran Super Retina XDR.', seller: 'Mobile Hub' },
+      { id: 3, name: 'Jordan Retro 4', price: 250, image: 'https://picsum.photos/seed/shoes/400/400', rating: 4.2, category: 'Mode', description: 'Baskets iconiques Air Jordan 4 Retro, édition limitée. Confort et style garantis.', seller: 'Sneaker City' },
+      { id: 4, name: 'Cafetière Espresso', price: 180, image: 'https://picsum.photos/seed/coffee/400/400', rating: 4.5, category: 'Mobilier', description: 'Machine à café professionnelle, 15 bars de pression, réservoir 1.5L. Café parfait à la maison.', seller: 'Home Goods' },
+      { id: 5, name: 'Toyota Corolla 2020', price: 15000, image: 'https://picsum.photos/seed/car/400/400', rating: 4.7, category: 'Automobile', description: 'Voiture en excellent état, 45000km, climatisation, vitres électriques, entretien régulier.', seller: 'Auto Kinshasa' },
+      { id: 6, name: 'Villa 4 chambres', price: 85000, image: 'https://picsum.photos/seed/house/400/400', rating: 4.9, category: 'Immobilier', description: 'Belle villa moderne, 4 chambres, 3 salles de bain, jardin, garage double. Quartier résidentiel.', seller: 'Immo Plus' },
+      { id: 7, name: 'Canapé 3 places', price: 450, image: 'https://picsum.photos/seed/sofa/400/400', rating: 4.3, category: 'Mobilier', description: 'Canapé confortable en tissu gris, design moderne, pieds en bois massif. Livraison gratuite.', seller: 'Meuble Design' },
+      { id: 8, name: 'Samsung Galaxy S24', price: 899, image: 'https://picsum.photos/seed/samsung/400/400', rating: 4.6, category: 'Électronique', description: 'Smartphone Android haut de gamme, écran AMOLED 6.2", 256GB, 5G, batterie longue durée.', seller: 'TechStore RDC' }
+    ];
+
+    const filteredProducts = selectedCategory === 'Tous' 
+      ? products 
+      : products.filter(p => p.category === selectedCategory);
+
+    const toggleFavorite = (productId: number) => {
+      setFavorites(prev => 
+        prev.includes(productId.toString()) 
+          ? prev.filter(id => id !== productId.toString())
+          : [...prev, productId.toString()]
+      );
+    };
+
+    const addToCart = (product: any) => {
+      setCart(prev => [...prev, product]);
+      alert(`${product.name} ajouté au panier !`);
+    };
+
+    return (
+      <div className="p-6 md:p-8 pb-24 md:pb-32">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Bienvenue sur</p>
+              <h1 className="text-2xl font-black text-emerald-900">Banho Store</h1>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setActiveTab('orders')}
+                className="p-3 bg-gray-100 rounded-2xl relative"
+              >
+                <svg className="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                </svg>
+                {cart.length > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-orange-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                    {cart.length}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+          
+          {/* Search Bar */}
+          <div className="relative">
+            <input 
+              type="text" 
+              placeholder="Rechercher un produit..." 
+              className="w-full bg-gray-100 border-none rounded-2xl py-4 pl-12 pr-4 focus:ring-2 focus:ring-emerald-900 transition-all text-sm font-medium"
+            />
+            <svg className="absolute left-4 top-4 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8"/>
+              <path d="m21 21-4.35-4.35"/>
+            </svg>
+          </div>
+        </div>
+
+      {/* Categories avec icônes personnalisées */}
+      <div className="flex gap-3 overflow-x-auto mb-8 no-scrollbar pb-2">
+        {[
+          { 
+            name: 'Tous', 
+            icon: (
+              <div className="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center">
+                <div className="w-2 h-2 bg-white rounded-full"></div>
+              </div>
+            )
+          },
+          { 
+            name: 'Électronique', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-3 bg-emerald-600 rounded-sm"></div>
+                <div className="w-2 h-1 bg-emerald-600 mx-auto mt-0.5 rounded-sm"></div>
+              </div>
+            )
+          },
+          { 
+            name: 'Mode', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-2 bg-orange-500 rounded-t-lg"></div>
+                <div className="w-full h-3 bg-emerald-600 rounded-b-sm"></div>
+              </div>
+            )
+          },
+          { 
+            name: 'Automobile', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-2 bg-emerald-600 rounded-t-lg"></div>
+                <div className="flex gap-1 mt-1">
+                  <div className="w-1.5 h-1.5 bg-gray-600 rounded-full"></div>
+                  <div className="flex-1"></div>
+                  <div className="w-1.5 h-1.5 bg-gray-600 rounded-full"></div>
+                </div>
+              </div>
+            )
+          },
+          { 
+            name: 'Immobilier', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-3 h-2 bg-orange-500 mx-auto" style={{clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)'}}></div>
+                <div className="w-full h-2 bg-emerald-600 mt-0.5"></div>
+                <div className="w-1 h-1 bg-orange-400 mx-auto"></div>
+              </div>
+            )
+          },
+          { 
+            name: 'Mobilier', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-1 bg-emerald-600 rounded"></div>
+                <div className="w-1 h-3 bg-emerald-600 mx-auto"></div>
+                <div className="w-3 h-1 bg-emerald-600 mx-auto rounded"></div>
+              </div>
+            )
+          }
+        ].map((cat, index) => (
+          <button 
+            key={cat.name} 
+            onClick={() => setSelectedCategory(cat.name)}
+            className={`px-4 py-3 rounded-2xl text-xs font-bold whitespace-nowrap shadow-sm active:scale-95 transition-all flex items-center gap-2 ${
+              selectedCategory === cat.name ? 'bg-emerald-900 text-white' : 'bg-white border border-gray-200'
+            }`}
+          >
+            {cat.icon}
+            <span className={selectedCategory === cat.name ? 'text-white' : 'text-gray-700'}>{cat.name}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Products Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-black text-gray-900">
+          {selectedCategory === 'Tous' ? 'Tous les produits' : selectedCategory}
+        </h2>
+        <button className="text-orange-500 text-xs font-black uppercase tracking-wider">
+          {filteredProducts.length} produits
+        </button>
+      </div>
+
+      {/* Products Grid */}
+      <div className="grid grid-cols-2 gap-4">
+        {filteredProducts.map(product => (
+          <div key={product.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 flex flex-col">
+            <div className="relative aspect-[4/5]" onClick={() => setSelectedProduct(product)}>
+              <img src={product.image} alt={product.name} className="w-full h-full object-cover cursor-pointer" />
+              <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2 py-1 rounded-full text-[10px] font-bold text-emerald-900">
+                New
+              </div>
+              <button 
+                onClick={(e) => {e.stopPropagation(); toggleFavorite(product.id);}}
+                className="absolute top-3 left-3 p-2 bg-white/90 backdrop-blur rounded-full shadow-lg active:scale-90 transition-transform"
+              >
+                <svg className={`w-5 h-5 ${favorites.includes(product.id.toString()) ? 'fill-red-500 text-red-500' : 'text-gray-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </button>
+              <button 
+                onClick={(e) => {e.stopPropagation(); addToCart(product);}}
+                className="absolute bottom-3 right-3 p-2.5 bg-emerald-900 text-white rounded-2xl shadow-lg active:scale-90 transition-transform"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4">
+              <h3 className="text-sm font-bold text-gray-800 line-clamp-1 mb-2">{product.name}</h3>
+              <div className="flex items-center justify-between">
+                <p className="text-emerald-900 font-black text-lg">${product.price}</p>
+                <div className="flex items-center gap-1">
+                  <svg className="w-3 h-3 text-orange-400 fill-orange-400" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                  </svg>
+                  <span className="text-[10px] font-bold text-gray-600">{product.rating}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+          { 
+            name: 'Tous', 
+            icon: (
+              <div className="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center">
+                <div className="w-2 h-2 bg-white rounded-full"></div>
+              </div>
+            ), 
+            color: 'bg-emerald-900 text-white' 
+          },
+          { 
+            name: 'Électronique', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-3 bg-emerald-600 rounded-sm"></div>
+                <div className="w-2 h-1 bg-emerald-600 mx-auto mt-0.5 rounded-sm"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Mode', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-2 bg-orange-500 rounded-t-lg"></div>
+                <div className="w-full h-3 bg-emerald-600 rounded-b-sm"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Automobile', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-2 bg-emerald-600 rounded-t-lg"></div>
+                <div className="flex gap-1 mt-1">
+                  <div className="w-1.5 h-1.5 bg-gray-600 rounded-full"></div>
+                  <div className="flex-1"></div>
+                  <div className="w-1.5 h-1.5 bg-gray-600 rounded-full"></div>
+                </div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Immobilier', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-3 h-2 bg-orange-500 mx-auto" style={{clipPath: 'polygon(50% 0%, 0% 100%, 100% 100%)'}}></div>
+                <div className="w-full h-2 bg-emerald-600 mt-0.5"></div>
+                <div className="w-1 h-1 bg-orange-400 mx-auto"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Mobilier', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-full h-1 bg-emerald-600 rounded"></div>
+                <div className="w-1 h-3 bg-emerald-600 mx-auto"></div>
+                <div className="w-3 h-1 bg-emerald-600 mx-auto rounded"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Alimentation', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-4 h-4 bg-orange-500 rounded-full mx-auto"></div>
+                <div className="w-1 h-2 bg-emerald-600 mx-auto -mt-1"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Sport', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-4 h-4 border-2 border-emerald-600 rounded-full mx-auto"></div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-2 h-0.5 bg-emerald-600"></div>
+                </div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Beauté', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-2 h-4 bg-orange-500 mx-auto rounded-t-full"></div>
+                <div className="w-3 h-1 bg-emerald-600 mx-auto -mt-0.5 rounded"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Santé', 
+            icon: (
+              <div className="w-5 h-5 relative flex items-center justify-center">
+                <div className="w-1 h-4 bg-emerald-600"></div>
+                <div className="w-4 h-1 bg-emerald-600 absolute"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Livres', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-3 h-4 bg-emerald-600 mx-auto"></div>
+                <div className="w-3 h-4 bg-orange-500 mx-auto -mt-4 ml-1"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Jouets', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-3 h-2 bg-orange-500 mx-auto rounded-t-full"></div>
+                <div className="w-4 h-2 bg-emerald-600 mx-auto rounded-b-lg"></div>
+                <div className="flex gap-1 justify-center -mt-1">
+                  <div className="w-0.5 h-0.5 bg-gray-600 rounded-full"></div>
+                  <div className="w-0.5 h-0.5 bg-gray-600 rounded-full"></div>
+                </div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Jardinage', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-1 h-3 bg-emerald-600 mx-auto"></div>
+                <div className="w-3 h-1 bg-emerald-600 mx-auto -mt-1"></div>
+                <div className="w-2 h-1 bg-orange-500 mx-auto"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Animaux', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-3 h-2 bg-orange-500 mx-auto rounded-t-full"></div>
+                <div className="w-4 h-2 bg-emerald-600 mx-auto rounded-b-full"></div>
+                <div className="flex gap-2 justify-center -mt-1">
+                  <div className="w-0.5 h-0.5 bg-gray-600 rounded-full"></div>
+                  <div className="w-0.5 h-0.5 bg-gray-600 rounded-full"></div>
+                </div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Musique', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-2 h-3 bg-emerald-600 rounded-full"></div>
+                <div className="w-1 h-2 bg-emerald-600 ml-2 -mt-2"></div>
+                <div className="w-1.5 h-1.5 bg-orange-500 rounded-full ml-1.5 -mt-0.5"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Art', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-4 h-3 bg-white border-2 border-emerald-600 mx-auto"></div>
+                <div className="w-2 h-1 bg-orange-500 mx-auto -mt-2"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Voyage', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-4 h-2 bg-emerald-600 mx-auto rounded"></div>
+                <div className="w-1 h-1 bg-orange-500 mx-auto"></div>
+                <div className="w-3 h-1 bg-emerald-600 mx-auto rounded"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Bijoux', 
+            icon: (
+              <div className="w-5 h-5 relative flex items-center justify-center">
+                <div className="w-3 h-3 border-2 border-orange-500 rounded-full"></div>
+                <div className="w-1 h-1 bg-emerald-600 rounded-full absolute"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Outils', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-1 h-3 bg-emerald-600 mx-auto rotate-45"></div>
+                <div className="w-2 h-1 bg-orange-500 mx-auto -mt-1"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          },
+          { 
+            name: 'Bébé', 
+            icon: (
+              <div className="w-5 h-5 relative">
+                <div className="w-2 h-2 bg-orange-500 mx-auto rounded-full"></div>
+                <div className="w-3 h-2 bg-emerald-600 mx-auto rounded-b-full"></div>
+              </div>
+            ), 
+            color: 'bg-white border border-gray-200' 
+          }
+        ].map((cat, index) => (
+          <button 
+            key={cat.name} 
+            className={`px-4 py-3 rounded-2xl text-xs font-bold whitespace-nowrap shadow-sm active:scale-95 transition-all flex items-center gap-2 ${cat.color}`}
+          >
+            {cat.icon}
+            <span className={index === 0 ? 'text-white' : 'text-gray-700'}>{cat.name}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Products Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-lg font-black text-gray-900">Populaires</h2>
+        <button className="text-orange-500 text-xs font-black uppercase tracking-wider">Tout voir</button>
+      </div>
+
+      {/* Products Grid */}
+      <div className="grid grid-cols-2 gap-4">
+        {[
+          { id: 1, name: 'MacBook Air M2', price: 1200, image: 'https://picsum.photos/seed/macbook/400/400', rating: 4.8, category: 'Électronique' },
+          { id: 2, name: 'iPhone 15 Pro', price: 999, image: 'https://picsum.photos/seed/iphone/400/400', rating: 4.9, category: 'Électronique' },
+          { id: 3, name: 'Jordan Retro', price: 250, image: 'https://picsum.photos/seed/shoes/400/400', rating: 4.2, category: 'Mode' },
+          { id: 4, name: 'Cafetière Espresso', price: 180, image: 'https://picsum.photos/seed/coffee/400/400', rating: 4.5, category: 'Maison' }
+        ].map(product => (
+          <div key={product.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-gray-100 flex flex-col cursor-pointer active:scale-95 transition-transform">
+            <div className="relative aspect-[4/5]">
+              <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+              <div className="absolute top-3 right-3 bg-white/90 backdrop-blur px-2 py-1 rounded-full text-[10px] font-bold text-emerald-900">
+                New
+              </div>
+              <div className="absolute bottom-3 right-3 p-2.5 bg-emerald-900 text-white rounded-2xl shadow-lg">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="8" x2="12" y2="16"/>
+                  <line x1="8" y1="12" x2="16" y2="12"/>
+                </svg>
+              </div>
+            </div>
+            <div className="p-4">
+              <h3 className="text-sm font-bold text-gray-800 line-clamp-1 mb-2">{product.name}</h3>
+              <div className="flex items-center justify-between">
+                <p className="text-emerald-900 font-black text-lg">${product.price}</p>
+                <div className="flex items-center gap-1">
+                  <svg className="w-3 h-3 text-orange-400 fill-orange-400" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                  </svg>
+                  <span className="text-[10px] font-bold text-gray-600">{product.rating}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const WalletView = () => {
+    const [isCardFlipped, setIsCardFlipped] = useState(false);
+    const [showBalance, setShowBalance] = useState(false);
+    const [showPin, setShowPin] = useState(false);
+
+    return (
+      <div className="p-6 md:p-8 pb-24 md:pb-32">
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-black text-gray-900">BanhoPay</h1>
+          <button className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100">
+            <div className="w-6 h-6 text-emerald-900 flex items-center justify-center">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </div>
+          </button>
+        </div>
+        
+        {/* Carte Banho Gold avec animation flip */}
+        <div style={{perspective: '1000px'}} className="mb-10">
+          <div 
+            className={`relative w-full h-56 transition-all duration-700 cursor-pointer`}
+            style={{
+              transformStyle: 'preserve-3d',
+              transform: isCardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
+            }}
+            onClick={() => setIsCardFlipped(!isCardFlipped)}
+          >
+            {/* Face avant de la carte - Design original */}
+            <div 
+              className="absolute inset-0 bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-6 rounded-[1.5rem] shadow-2xl relative overflow-hidden text-white"
+              style={{backfaceVisibility: 'hidden'}}
+            >
+              <div className="absolute -top-20 -right-20 w-64 h-64 bg-orange-500/10 rounded-full blur-[80px]" />
+              
+              <div className="flex justify-between items-start z-10 relative mb-6">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-lg">
+                  <img src="/logo-banho.png" alt="Banho" className="w-8 h-8 object-contain" />
+                </div>
+                <p className="text-[10px] font-black tracking-[0.3em] text-white/60 uppercase">BANHO GOLD CARD</p>
+              </div>
+              
+              <div className="z-10 relative mb-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <p className="text-xs text-white/60 font-bold uppercase tracking-widest">SOLDE ACTUEL</p>
+                  <button 
+                    onClick={(e) => {e.stopPropagation(); setShowBalance(!showBalance);}}
+                    className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                  >
+                    {showBalance ? <EyeOff className="w-4 h-4 text-white/60" /> : <Eye className="w-4 h-4 text-white/60" />}
+                  </button>
+                </div>
+                <p className="text-4xl font-black tracking-tight">
+                  {showBalance ? '$2,450' : '••••••'}<span className="text-xl text-white/50">.00</span>
+                </p>
+              </div>
+              
+              <div className="flex justify-between items-end z-10 relative">
+                <div>
+                  <p className="text-xs text-white/50 uppercase tracking-widest mb-1">Titulaire</p>
+                  <p className="text-sm font-medium tracking-[0.15em] text-white/70">ARIS KUNDA</p>
+                </div>
+                <div className="flex -space-x-3">
+                  <div className="w-8 h-8 bg-orange-500 rounded-full border border-white/20" />
+                  <div className="w-8 h-8 bg-emerald-500 rounded-full border border-white/20" />
+                </div>
+              </div>
+            </div>
+
+            {/* Face arrière de la carte - Toutes les nouvelles informations */}
+            <div 
+              className="absolute inset-0 bg-gradient-to-br from-gray-800 via-gray-900 to-black p-6 rounded-[1.5rem] shadow-2xl text-white"
+              style={{
+                backfaceVisibility: 'hidden',
+                transform: 'rotateY(180deg)'
+              }}
+            >
+              <div className="h-full flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center">
+                      <img src="/logo-banho.png" alt="Banho" className="w-6 h-6 object-contain" />
+                    </div>
+                    <p className="text-[8px] font-black tracking-[0.2em] text-white/40 uppercase">BANHO FINANCIAL</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">Numéro de carte</p>
+                      <p className="text-base font-mono tracking-[0.2em]">4532 •••• •••• 8901</p>
+                    </div>
+                    
+                    <div className="flex gap-6">
+                      <div>
+                        <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">Exp</p>
+                        <p className="text-sm font-mono">12/28</p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">CVV</p>
+                        <p className="text-sm font-mono">•••</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">ID Firestore</p>
+                      <p className="text-[10px] font-mono text-emerald-400">usr_ak_2024_001_banho</p>
+                    </div>
+
+                    <div className="flex gap-6">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-[9px] text-white/50 uppercase tracking-widest">PIN</p>
+                          <button 
+                            onClick={(e) => {e.stopPropagation(); setShowPin(!showPin);}}
+                            className="p-0.5 hover:bg-white/10 rounded transition-colors"
+                          >
+                            {showPin ? <EyeOff className="w-3 h-3 text-white/60" /> : <Eye className="w-3 h-3 text-white/60" />}
+                          </button>
+                        </div>
+                        <p className="text-sm font-mono tracking-[0.3em]">
+                          {showPin ? '1234' : '••••'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">Type</p>
+                        <p className="text-xs text-orange-400 font-bold">Premium Gold</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">Limite quotidienne</p>
+                      <p className="text-sm font-bold">$5,000.00</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-center">
+                  <p className="text-[7px] text-white/30 uppercase tracking-widest">Banho Digital Wallet • Sécurisé</p>
+                  <p className="text-[7px] text-white/20 mt-1">+243 900 000 000</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons - Retrait seulement */}
+        <div className="grid grid-cols-3 gap-4 mb-10">
+          {[
+            { 
+              label: 'RETRAIT', 
+              icon: (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v13m0 0l-4-4m4 4l4-4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18v6H3z" />
+                </svg>
+              ), 
+              color: 'bg-red-50 text-red-600' 
+            },
+            { 
+              label: 'ENVOI', 
+              icon: (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19V6m0 0l-4 4m4-4l4 4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 21h14" />
+                </svg>
+              ), 
+              color: 'bg-blue-50 text-blue-600' 
+            },
+            { 
+              label: 'QR CODE', 
+              icon: (
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <rect x="3" y="3" width="7" height="7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>
+                  <rect x="14" y="3" width="7" height="7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>
+                  <rect x="3" y="14" width="7" height="7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>
+                  <rect x="5" y="5" width="3" height="3" fill="currentColor"/>
+                  <rect x="16" y="5" width="3" height="3" fill="currentColor"/>
+                  <rect x="5" y="16" width="3" height="3" fill="currentColor"/>
+                  <path strokeWidth={2.5} strokeLinecap="round" d="M14 14h7M14 17h4M14 20h7M18 17v4"/>
+                </svg>
+              ), 
+              color: 'bg-emerald-50 text-emerald-600' 
+            }
+          ].map((btn, i) => (
+            <div key={i} className="flex flex-col items-center gap-3">
+              <button className={`${btn.color} w-16 h-16 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-transform`}>
+                {btn.icon}
+              </button>
+              <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{btn.label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Historique Section */}
+        <div className="mb-6">
+          <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+            <div className="w-1 h-5 bg-gray-900 rounded-full"></div>
+            Historique
+          </h2>
+        </div>
+
+        {/* Transaction List */}
+        <div className="space-y-4">
+          <div className="bg-white p-5 rounded-2xl flex items-center justify-between border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-lg font-bold">
+                ↗
+              </div>
+              <div>
+                <p className="text-sm font-black text-gray-900">Retrait ATM</p>
+                <p className="text-xs text-gray-400 font-medium">2023-10-25 • EQUITY BANK</p>
+              </div>
+            </div>
+            <p className="text-sm font-black text-gray-900">-500$</p>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl flex items-center justify-between border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-lg font-bold">
+                ↗
+              </div>
+              <div>
+                <p className="text-sm font-black text-gray-900">Achat Banho</p>
+                <p className="text-xs text-gray-400 font-medium">2023-10-24 • WALLET</p>
+              </div>
+            </div>
+            <p className="text-sm font-black text-gray-900">-250$</p>
+          </div>
+
+          <div className="bg-white p-5 rounded-2xl flex items-center justify-between border border-gray-100 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-lg font-bold">
+                ↗
+              </div>
+              <div>
+                <p className="text-sm font-black text-gray-900">Transfert</p>
+                <p className="text-xs text-gray-400 font-medium">2023-10-22 • ORANGE MONEY</p>
+              </div>
+            </div>
+            <p className="text-sm font-black text-blue-600">-100$</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const OrdersView = () => (
+    <div className="p-6 md:p-8 pb-24 md:pb-32">
+      <h1 className="text-3xl font-black text-gray-900 mb-8">Mes Commandes</h1>
+      
+      {/* Filtres de commandes */}
+      <div className="flex gap-2 mb-6 overflow-x-auto no-scrollbar">
+        {['Toutes', 'En cours', 'Livrées', 'Annulées'].map((filter, index) => (
+          <button 
+            key={filter}
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+              index === 0 ? 'bg-emerald-900 text-white' : 'bg-white border border-gray-200 text-gray-600'
+            }`}
+          >
+            {filter}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {[
+          { 
+            id: '#BNH001', 
+            status: 'En cours', 
+            date: '24 Oct 2023', 
+            items: 'MacBook Air M2 + Accessoires',
+            total: '$1,299',
+            statusColor: 'bg-orange-100 text-orange-600'
+          },
+          { 
+            id: '#BNH002', 
+            status: 'Livrée', 
+            date: '20 Oct 2023', 
+            items: 'iPhone 15 Pro Max',
+            total: '$999',
+            statusColor: 'bg-emerald-100 text-emerald-600'
+          },
+          { 
+            id: '#BNH003', 
+            status: 'En cours', 
+            date: '18 Oct 2023', 
+            items: 'Jordan Retro 4 + T-shirt',
+            total: '$280',
+            statusColor: 'bg-orange-100 text-orange-600'
+          }
+        ].map((order) => (
+          <div key={order.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+            <div className="flex justify-between items-start mb-3">
+              <div>
+                <p className="text-sm font-black text-gray-900">{order.id}</p>
+                <p className="text-xs text-gray-500">{order.date}</p>
+              </div>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold ${order.statusColor}`}>
+                {order.status}
+              </span>
+            </div>
+            <p className="text-sm text-gray-700 mb-3">{order.items}</p>
+            <div className="flex justify-between items-center">
+              <p className="text-lg font-black text-emerald-900">{order.total}</p>
+              <button className="text-xs font-bold text-emerald-900 bg-emerald-50 px-3 py-1 rounded-lg">
+                Détails
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const ProfileView = () => (
+    <div className="p-6 md:p-8 pb-24 md:pb-32">
+      {/* Header Profil */}
+      <div className="text-center mb-8">
+        <div className="relative inline-block">
+          <div className="w-32 h-32 bg-emerald-900 rounded-[2.5rem] flex items-center justify-center mb-4 shadow-2xl shadow-emerald-900/20">
+            <UserIcon className="w-16 h-16 text-white" />
+          </div>
+          <div className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+          </div>
+        </div>
+        <h2 className="text-2xl font-black text-gray-900">Aris Kunda</h2>
+        <p className="text-sm text-gray-500 font-medium">Membre Premium Vérifié</p>
+        <div className="flex items-center justify-center gap-1 mt-2">
+          {[1,2,3,4,5].map(i => (
+            <svg key={i} className="w-4 h-4 text-orange-400 fill-orange-400" viewBox="0 0 20 20">
+              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+            </svg>
+          ))}
+          <span className="text-xs text-gray-500 ml-1">(4.9)</span>
+        </div>
+      </div>
+
+      {/* Statistiques */}
+      <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="bg-emerald-900 p-4 rounded-2xl text-white text-center">
+          <p className="text-2xl font-black">128</p>
+          <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest">Achats</p>
+        </div>
+        <div className="bg-orange-500 p-4 rounded-2xl text-white text-center">
+          <p className="text-2xl font-black">45</p>
+          <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest">Ventes</p>
+        </div>
+        <div className="bg-blue-500 p-4 rounded-2xl text-white text-center">
+          <p className="text-2xl font-black">2.4k</p>
+          <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest">Points</p>
+        </div>
+      </div>
+
+      {/* Informations personnelles */}
+      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm mb-6">
+        <h3 className="text-lg font-black text-gray-900 mb-4">Informations personnelles</h3>
+        <div className="space-y-3">
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Email</span>
+            <span className="text-sm font-bold">aris.kunda@banho.cd</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Téléphone</span>
+            <span className="text-sm font-bold">+243 900 123 456</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">Membre depuis</span>
+            <span className="text-sm font-bold">Janvier 2023</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-sm text-gray-500">ID Firestore</span>
+            <span className="text-xs font-mono text-emerald-600">usr_ak_2024_001_banho</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Menu des paramètres */}
+      <div className="space-y-3">
+        {[
+          { icon: ShoppingBag, label: 'Mes commandes', color: 'text-emerald-900', bg: 'bg-emerald-50', badge: '3' },
+          { icon: Wallet, label: 'BanhoPay & Paiements', color: 'text-orange-500', bg: 'bg-orange-50' },
+          { icon: UserIcon, label: 'Modifier le profil', color: 'text-blue-500', bg: 'bg-blue-50' },
+          { icon: Search, label: 'Mes favoris', color: 'text-purple-500', bg: 'bg-purple-50', badge: '12' },
+          { 
+            icon: () => (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-5 5-5-5h5v-12" />
+              </svg>
+            ), 
+            label: 'Notifications', 
+            color: 'text-yellow-600', 
+            bg: 'bg-yellow-50' 
+          },
+          { 
+            icon: () => (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            ), 
+            label: 'Sécurité & Confidentialité', 
+            color: 'text-red-500', 
+            bg: 'bg-red-50' 
+          },
+          { 
+            icon: () => (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            ), 
+            label: 'Aide & Support', 
+            color: 'text-gray-600', 
+            bg: 'bg-gray-50' 
+          },
+          { 
+            icon: () => (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            ), 
+            label: 'Paramètres généraux', 
+            color: 'text-gray-700', 
+            bg: 'bg-gray-50' 
+          }
+        ].map((item, i) => (
+          <div key={i} className="bg-white p-4 rounded-2xl flex items-center justify-between border border-gray-100 shadow-sm active:bg-gray-50 transition-colors cursor-pointer">
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${item.bg} ${item.color}`}>
+                <item.icon className="w-6 h-6" />
+              </div>
+              <span className="text-sm font-bold text-gray-800">{item.label}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {item.badge && (
+                <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                  {item.badge}
+                </span>
+              )}
+              <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bouton déconnexion */}
+      <button className="w-full mt-8 py-4 text-red-500 font-black text-sm bg-red-50 rounded-2xl active:bg-red-100 transition-colors uppercase tracking-widest border-2 border-red-100">
+        Déconnexion
+      </button>
+    </div>
+  );
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'home': return <HomeView />;
+      case 'wallet': return <WalletView />;
+      case 'orders': return <OrdersView />;
+      case 'profile': return <ProfileView />;
+      default: return <HomeView />;
+    }
+  };
+
+  if (showSplash) {
+    return <SplashScreen />;
+  }
+
+  return (
+    <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-0 md:p-4">
+      {/* iPhone Frame Container - Only on desktop */}
+      <div className="w-full h-full md:w-[430px] md:h-[900px] bg-gray-50 md:rounded-[4rem] md:border-[8px] md:border-black relative overflow-hidden md:shadow-[0_50px_100px_rgba(0,0,0,0.5)]">
+        
+        {/* iPhone Notch/Status Bar - Only on desktop */}
+        <div className="hidden md:flex absolute top-0 inset-x-0 h-12 bg-white/10 backdrop-blur-sm justify-between items-center px-10 z-[110] pointer-events-none">
+          <span className="text-[11px] font-black text-black/40">9:41</span>
+          <div className="w-32 h-6 bg-black rounded-full mb-1"></div>
+          <div className="flex gap-1.5 items-center">
+            <div className="w-3.5 h-3.5 bg-black/40 rounded-sm"></div>
+            <div className="w-4 h-2.5 bg-black/40 rounded-full"></div>
+          </div>
+        </div>
+
+        {/* Mobile Status Bar - Only on mobile */}
+        <div className="md:hidden h-12 bg-white flex justify-between items-center px-6 text-sm font-bold text-gray-400 border-b border-gray-100">
+          <span>9:41</span>
+          <span className="text-emerald-900 font-black">Banho</span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs">100%</span>
+            <div className="w-6 h-3 border border-gray-400 rounded-sm">
+              <div className="w-full h-full bg-green-500 rounded-sm"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Content Area */}
+        <div className="h-full w-full overflow-y-auto overflow-x-hidden no-scrollbar bg-gray-50 md:pt-12">
+          {renderContent()}
+          
+          {/* Bottom Navigation */}
+          <nav className="fixed md:absolute bottom-0 left-0 right-0 md:inset-x-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 px-6 md:px-8 py-4 md:py-6 md:pb-10 z-[80]">
+            <div className="flex justify-between max-w-md mx-auto md:max-w-none">
+              {[
+                { id: 'home', icon: ShoppingBag, label: 'Store' },
+                { id: 'wallet', icon: Wallet, label: 'BanhoPay' },
+                { id: 'orders', icon: MessageSquare, label: 'Commandes' },
+                { id: 'profile', icon: UserIcon, label: 'Profile' }
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex flex-col items-center gap-1 p-2 transition-all ${
+                    activeTab === tab.id ? 'text-emerald-900 scale-110' : 'text-gray-400'
+                  }`}
+                >
+                  <tab.icon className="w-6 h-6" />
+                  <span className="text-xs font-bold">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          </nav>
+        </div>
+
+        {/* iPhone Home Indicator - Only on desktop */}
+        <div className="hidden md:block absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-1.5 bg-black/10 rounded-full z-[120] pointer-events-none"></div>
+      </div>
+    </div>
+  );
+}
