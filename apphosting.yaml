@@ -1,0 +1,9 @@
+# Firebase App Hosting configuration for Vite SPA
+runConfig:
+  minInstances: 0
+  maxInstances: 2
+  cpu: 1
+  memoryMiB: 512
+
+# Specify the output directory from Vite build
+outputDirectory: dist

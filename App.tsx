@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { ShoppingBag, Wallet, MessageSquare, User as UserIcon, Eye, EyeOff, ArrowUpRight, Search, Heart, Bell, Shield, HelpCircle, Settings, Camera } from 'lucide-react';
 import { auth, db, storage } from './firebase';
 import { signUp, signIn, logOut, onAuthChange } from './services/authService';
@@ -80,6 +80,11 @@ export default function App() {
   const [userNotifications, setUserNotifications] = useState<any[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // États pour l'heure et la batterie réelles
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [batteryLevel, setBatteryLevel] = useState(100);
+  const [isCharging, setIsCharging] = useState(false);
 
   // États pour la page de caisse (checkout)
   const [showCheckout, setShowCheckout] = useState(false);
@@ -290,6 +295,48 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [showSplash]);
+
+  // Mise à jour de l'heure en temps réel
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Récupérer le niveau de batterie réel
+  useEffect(() => {
+    const getBattery = async () => {
+      try {
+        // @ts-ignore - Battery API
+        if (navigator.getBattery) {
+          // @ts-ignore
+          const battery = await navigator.getBattery();
+          setBatteryLevel(Math.round(battery.level * 100));
+          setIsCharging(battery.charging);
+          
+          battery.addEventListener('levelchange', () => {
+            setBatteryLevel(Math.round(battery.level * 100));
+          });
+          battery.addEventListener('chargingchange', () => {
+            setIsCharging(battery.charging);
+          });
+        }
+      } catch (e) {
+        console.log('Battery API not supported');
+      }
+    };
+    getBattery();
+  }, []);
+
+  // Formater l'heure
+  const formatTime = useCallback(() => {
+    return currentTime.toLocaleTimeString('fr-FR', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: false 
+    });
+  }, [currentTime]);
 
   // Observer l'état d'authentification Firebase
   useEffect(() => {
@@ -3477,16 +3524,9 @@ export default function App() {
 
   if (showSplash) {
     return (
-      <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-0 md:p-4">
-        {/* iPhone Frame Container - Only on desktop */}
-        <div className="w-full h-full md:w-[430px] md:h-[900px] bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-950 md:rounded-[4rem] md:border-[8px] md:border-black relative overflow-hidden md:shadow-[0_50px_100px_rgba(0,0,0,0.5)] flex flex-col items-center justify-center">
-          
-          {/* iPhone Notch - Only on desktop */}
-          <div className="hidden md:flex absolute top-0 inset-x-0 h-12 bg-black/20 backdrop-blur-sm justify-center items-center z-[110] pointer-events-none">
-            <div className="w-32 h-6 bg-black rounded-full mb-1"></div>
-          </div>
-
-          {/* Splash Content */}
+      <div className="fixed inset-0 bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-950 flex items-center justify-center">
+        {/* Splash Content - Full screen on mobile */}
+        <div className="flex flex-col items-center justify-center px-8">
           <div className="relative mb-8">
             {/* Logo Banho */}
             <div className="w-32 h-32 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl shadow-emerald-900/50 animate-pulse">
@@ -3510,9 +3550,6 @@ export default function App() {
             <div className="h-full bg-gradient-to-r from-orange-500 to-white rounded-full animate-pulse" style={{width: '100%', animation: 'loading 3s ease-in-out'}}></div>
           </div>
           <p className="text-white/60 text-xs mt-4 animate-pulse">Chargement en cours...</p>
-
-          {/* iPhone Home Indicator - Only on desktop */}
-          <div className="hidden md:block absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-1.5 bg-white/10 rounded-full z-[120] pointer-events-none"></div>
         </div>
       </div>
     );
@@ -3598,12 +3635,22 @@ export default function App() {
 
         {/* Mobile Status Bar - Only on mobile */}
         <div className="md:hidden h-12 bg-white flex justify-between items-center px-6 text-sm font-bold text-gray-400 border-b border-gray-100">
-          <span>9:41</span>
+          <span>{formatTime()}</span>
           <span className="text-emerald-900 font-black">Banho</span>
           <div className="flex items-center gap-1">
-            <span className="text-xs">100%</span>
-            <div className="w-6 h-3 border border-gray-400 rounded-sm">
-              <div className="w-full h-full bg-green-500 rounded-sm"></div>
+            <span className="text-xs">{batteryLevel}%</span>
+            <div className="w-6 h-3 border border-gray-400 rounded-sm relative">
+              <div 
+                className={`h-full rounded-sm transition-all ${
+                  batteryLevel > 20 ? 'bg-green-500' : 'bg-red-500'
+                } ${isCharging ? 'animate-pulse' : ''}`}
+                style={{ width: `${batteryLevel}%` }}
+              ></div>
+              {isCharging && (
+                <svg className="absolute inset-0 w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+              )}
             </div>
           </div>
         </div>
