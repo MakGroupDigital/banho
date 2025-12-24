@@ -10,7 +10,8 @@ import {
   orderBy,
   Timestamp 
 } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 
 export interface Product {
   id?: string;
@@ -24,10 +25,30 @@ export interface Product {
   seller: string;
   stock: number;
   reviews: number;
+  condition: 'neuve' | 'occasion' | 'services';
+  location: string;
+  userId: string;
   createdAt?: Timestamp;
 }
 
 const productsCollection = collection(db, 'products');
+
+// Upload une image vers Firebase Storage
+export const uploadImage = async (file: File, userId: string): Promise<string> => {
+  try {
+    const timestamp = Date.now();
+    const fileName = `products/${userId}/${timestamp}_${file.name}`;
+    const storageRef = ref(storage, fileName);
+    
+    await uploadBytes(storageRef, file);
+    const downloadURL = await getDownloadURL(storageRef);
+    
+    return downloadURL;
+  } catch (error) {
+    console.error('Erreur lors de l\'upload de l\'image:', error);
+    throw error;
+  }
+};
 
 // Ajouter un produit
 export const addProduct = async (product: Omit<Product, 'id' | 'createdAt'>) => {
@@ -53,6 +74,45 @@ export const getAllProducts = async (): Promise<Product[]> => {
     } as Product));
   } catch (error) {
     console.error('Erreur lors de la récupération des produits:', error);
+    throw error;
+  }
+};
+
+// Récupérer les produits par condition (neuve, occasion, services)
+export const getProductsByCondition = async (condition: 'neuve' | 'occasion' | 'services'): Promise<Product[]> => {
+  try {
+    const q = query(productsCollection, where('condition', '==', condition), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Product));
+  } catch (error: any) {
+    console.error('Erreur lors de la récupération des produits par condition:', error);
+    
+    // Si l'erreur est liée à un index manquant, essayer sans orderBy
+    if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+      console.log('Tentative sans orderBy...');
+      try {
+        const q = query(productsCollection, where('condition', '==', condition));
+        const querySnapshot = await getDocs(q);
+        const products = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Product));
+        
+        // Trier manuellement par date
+        return products.sort((a, b) => {
+          const dateA = a.createdAt?.toMillis() || 0;
+          const dateB = b.createdAt?.toMillis() || 0;
+          return dateB - dateA;
+        });
+      } catch (fallbackError) {
+        console.error('Erreur lors de la récupération sans orderBy:', fallbackError);
+        throw fallbackError;
+      }
+    }
+    
     throw error;
   }
 };

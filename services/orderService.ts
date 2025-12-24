@@ -57,6 +57,34 @@ export const getUserOrders = async (userId: string): Promise<Order[]> => {
   }
 };
 
+// Récupérer les commandes reçues (ventes) d'un utilisateur
+export const getUserSales = async (userId: string): Promise<Order[]> => {
+  try {
+    // Récupérer toutes les commandes où l'utilisateur est vendeur
+    const allOrdersSnapshot = await getDocs(ordersCollection);
+    const sales: Order[] = [];
+    
+    allOrdersSnapshot.forEach(doc => {
+      const order = { id: doc.id, ...doc.data() } as Order;
+      // Vérifier si l'utilisateur est vendeur dans au moins un item
+      const isSeller = order.items.some((item: any) => item.sellerId === userId);
+      if (isSeller) {
+        sales.push(order);
+      }
+    });
+    
+    // Trier par date décroissante
+    return sales.sort((a, b) => {
+      const dateA = a.createdAt?.toMillis() || 0;
+      const dateB = b.createdAt?.toMillis() || 0;
+      return dateB - dateA;
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des ventes:', error);
+    throw error;
+  }
+};
+
 // Mettre à jour le statut d'une commande
 export const updateOrderStatus = async (orderId: string, status: Order['status']) => {
   try {

@@ -1,0 +1,136 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Règles pour les produits
+    match /products/{productId} {
+      // Tout le monde peut lire les produits
+      allow read: if true;
+      
+      // Seuls les utilisateurs authentifiés peuvent créer des produits
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.name is string
+                    && request.resource.data.price is number
+                    && request.resource.data.price > 0
+                    && request.resource.data.category is string
+                    && request.resource.data.description is string;
+      
+      // Seul le propriétaire peut modifier ou supprimer son produit
+      allow update, delete: if request.auth != null
+                             && resource.data.userId == request.auth.uid;
+    }
+    
+    // Règles pour les commandes
+    match /orders/{orderId} {
+      // Seul le propriétaire peut lire ses commandes
+      allow read: if request.auth != null
+                  && (resource.data.userId == request.auth.uid 
+                      || resource.data.sellerId == request.auth.uid);
+      
+      // Seuls les utilisateurs authentifiés peuvent créer des commandes
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      
+      // Seul le propriétaire ou le vendeur peut modifier la commande
+      allow update: if request.auth != null
+                    && (resource.data.userId == request.auth.uid 
+                        || resource.data.sellerId == request.auth.uid);
+      
+      // Seul le propriétaire peut supprimer sa commande
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+    
+    // Règles pour les profils utilisateurs
+    match /users/{userId} {
+      // Tout le monde peut lire les profils publics
+      allow read: if true;
+      
+      // Seul l'utilisateur peut créer/modifier son propre profil
+      allow create, update: if request.auth != null
+                            && request.auth.uid == userId;
+      
+      // Seul l'utilisateur peut supprimer son profil
+      allow delete: if request.auth != null
+                    && request.auth.uid == userId;
+    }
+    
+    // Règles pour les avis/reviews
+    match /reviews/{reviewId} {
+      allow read: if true;
+      
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+      
+      allow update, delete: if request.auth != null
+                             && resource.data.userId == request.auth.uid;
+    }
+    
+    // Règles pour les messages/chat
+    match /messages/{messageId} {
+      allow read: if request.auth != null
+                  && (resource.data.senderId == request.auth.uid 
+                      || resource.data.receiverId == request.auth.uid);
+      
+      allow create: if request.auth != null
+                    && request.resource.data.senderId == request.auth.uid;
+      
+      allow update, delete: if request.auth != null
+                             && resource.data.senderId == request.auth.uid;
+    }
+    
+    // Règles pour les transactions
+    match /transactions/{transactionId} {
+      // Seul l'utilisateur peut lire ses transactions
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      
+      // Seuls les utilisateurs authentifiés peuvent créer des transactions
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.type is string
+                    && request.resource.data.amount is number
+                    && request.resource.data.description is string;
+      
+      // Seul le propriétaire peut modifier ou supprimer sa transaction
+      allow update, delete: if request.auth != null
+                             && resource.data.userId == request.auth.uid;
+    }
+    
+    // Règles pour les favoris
+    match /favorites/{favoriteId} {
+      // Seul l'utilisateur peut lire ses favoris
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      
+      // Seuls les utilisateurs authentifiés peuvent créer des favoris
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.productId is string;
+      
+      // Seul le propriétaire peut supprimer son favori
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+    
+    // Règles pour les notifications
+    match /notifications/{notificationId} {
+      // Seul l'utilisateur peut lire ses notifications
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      
+      // Tout utilisateur authentifié peut créer une notification
+      allow create: if request.auth != null
+                    && request.resource.data.userId is string
+                    && request.resource.data.type is string
+                    && request.resource.data.title is string
+                    && request.resource.data.message is string;
+      
+      // Seul le propriétaire peut modifier ou supprimer sa notification
+      allow update, delete: if request.auth != null
+                             && resource.data.userId == request.auth.uid;
+    }
+  }
+}

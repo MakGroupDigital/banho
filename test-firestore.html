@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Firestore</title>
+</head>
+<body>
+    <h1>Test Firestore Connection</h1>
+    <button onclick="testProducts()">Charger les produits</button>
+    <div id="result"></div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, query, where } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDbEkkwODhD3jGpQn5LfiCOq_LcP5VIC1Y",
+            authDomain: "banho-zando-online-3ljs41.firebaseapp.com",
+            projectId: "banho-zando-online-3ljs41",
+            storageBucket: "banho-zando-online-3ljs41.appspot.com",
+            messagingSenderId: "668054913818",
+            appId: "1:668054913818:web:33b6a2c1683671f5c0a2a3"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.testProducts = async function() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Chargement...';
+            
+            try {
+                // Test 1: Charger TOUS les produits
+                console.log('Test 1: Charger tous les produits');
+                const allProductsSnapshot = await getDocs(collection(db, 'products'));
+                console.log('Nombre total de produits:', allProductsSnapshot.size);
+                
+                const allProducts = [];
+                allProductsSnapshot.forEach(doc => {
+                    allProducts.push({ id: doc.id, ...doc.data() });
+                });
+                
+                console.log('Produits:', allProducts);
+                
+                // Test 2: Charger les produits "neuve"
+                console.log('Test 2: Charger les produits neuve');
+                const neuveQuery = query(collection(db, 'products'), where('condition', '==', 'neuve'));
+                const neuveSnapshot = await getDocs(neuveQuery);
+                console.log('Nombre de produits neuve:', neuveSnapshot.size);
+                
+                resultDiv.innerHTML = `
+                    <h2>Résultats:</h2>
+                    <p>Total produits: ${allProductsSnapshot.size}</p>
+                    <p>Produits neuve: ${neuveSnapshot.size}</p>
+                    <h3>Liste des produits:</h3>
+                    <pre>${JSON.stringify(allProducts, null, 2)}</pre>
+                `;
+            } catch (error) {
+                console.error('Erreur:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Erreur: ${error.message}</p>`;
+            }
+        };
+    </script>
+</body>
+</html>
