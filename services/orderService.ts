@@ -6,74 +6,110 @@ import {
   updateDoc,
   query,
   where,
-  orderBy,
   Timestamp 
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
+export interface OrderItem {
+  productId: string;
+  productName: string;
+  productImage: string;
+  price: number;
+  quantity: number;
+  sellerId: string;
+  sellerName: string;
+}
+
 export interface Order {
   id?: string;
+  orderId?: string;
   userId: string;
-  items: any[];
+  buyerName: string;
+  buyerEmail: string;
+  items: OrderItem[];
   total: number;
-  status: 'En cours' | 'Livrée' | 'Annulée';
+  status: 'En attente' | 'En cours' | 'En route' | 'Livrée' | 'Annulée';
   createdAt?: Timestamp;
+  updatedAt?: Timestamp;
   deliveryAddress?: string;
+  deliveryCity?: string;
+  deliveryPhone?: string;
+  deliveryNotes?: string;
   paymentMethod?: string;
 }
 
 const ordersCollection = collection(db, 'orders');
 
+// Générer un ID de commande unique
+const generateOrderId = () => {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `BNH-${timestamp}-${random}`;
+};
+
 // Créer une commande
-export const createOrder = async (order: Omit<Order, 'id' | 'createdAt'>) => {
+export const createOrder = async (order: Omit<Order, 'id' | 'orderId' | 'createdAt' | 'updatedAt'>) => {
   try {
+    const orderId = generateOrderId();
     const docRef = await addDoc(ordersCollection, {
       ...order,
-      createdAt: Timestamp.now()
+      orderId,
+      status: order.status || 'En attente',
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now()
     });
-    return { id: docRef.id, ...order };
+    console.log('Commande créée:', docRef.id, orderId);
+    return { id: docRef.id, orderId, ...order };
   } catch (error) {
     console.error('Erreur lors de la création de la commande:', error);
     throw error;
   }
 };
 
-// Récupérer les commandes d'un utilisateur
+// Récupérer les commandes d'un utilisateur (achats) - sans orderBy
 export const getUserOrders = async (userId: string): Promise<Order[]> => {
   try {
     const q = query(
       ordersCollection, 
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', userId)
     );
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({
+    const orders = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as Order));
+    
+    // Trier côté client
+    return orders.sort((a, b) => {
+      const dateA = a.createdAt?.toMillis() || 0;
+      const dateB = b.createdAt?.toMillis() || 0;
+      return dateB - dateA;
+    });
   } catch (error) {
     console.error('Erreur lors de la récupération des commandes:', error);
-    throw error;
+    return [];
   }
 };
 
 // Récupérer les commandes reçues (ventes) d'un utilisateur
 export const getUserSales = async (userId: string): Promise<Order[]> => {
   try {
-    // Récupérer toutes les commandes où l'utilisateur est vendeur
     const allOrdersSnapshot = await getDocs(ordersCollection);
     const sales: Order[] = [];
     
-    allOrdersSnapshot.forEach(doc => {
-      const order = { id: doc.id, ...doc.data() } as Order;
-      // Vérifier si l'utilisateur est vendeur dans au moins un item
-      const isSeller = order.items.some((item: any) => item.sellerId === userId);
+    allOrdersSnapshot.forEach(docSnap => {
+      const order = { id: docSnap.id, ...docSnap.data() } as Order;
+      const isSeller = order.items?.some((item: OrderItem) => item.sellerId === userId);
       if (isSeller) {
-        sales.push(order);
+        const sellerItems = order.items.filter((item: OrderItem) => item.sellerId === userId);
+        sales.push({
+          ...order,
+          items: sellerItems,
+          total: sellerItems.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0)
+        });
       }
     });
     
-    // Trier par date décroissante
     return sales.sort((a, b) => {
       const dateA = a.createdAt?.toMillis() || 0;
       const dateB = b.createdAt?.toMillis() || 0;
@@ -81,7 +117,7 @@ export const getUserSales = async (userId: string): Promise<Order[]> => {
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des ventes:', error);
-    throw error;
+    return [];
   }
 };
 
@@ -89,7 +125,11 @@ export const getUserSales = async (userId: string): Promise<Order[]> => {
 export const updateOrderStatus = async (orderId: string, status: Order['status']) => {
   try {
     const orderRef = doc(db, 'orders', orderId);
-    await updateDoc(orderRef, { status });
+    await updateDoc(orderRef, { 
+      status,
+      updatedAt: Timestamp.now()
+    });
+    console.log('Statut mis à jour:', orderId, status);
   } catch (error) {
     console.error('Erreur lors de la mise à jour du statut:', error);
     throw error;

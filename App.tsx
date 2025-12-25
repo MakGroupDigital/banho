@@ -1,15 +1,16 @@
 
 import React, { useState, useEffect, useCallback, memo } from 'react';
-import { ShoppingBag, Wallet, MessageSquare, User as UserIcon, Eye, EyeOff, ArrowUpRight, Search, Heart, Bell, Shield, HelpCircle, Settings, Camera } from 'lucide-react';
+import { ShoppingBag, Wallet, MessageSquare, User as UserIcon, Eye, EyeOff, ArrowUpRight, Search, Heart, Bell, Shield, HelpCircle, Settings, Camera, Copy, QrCode, Send, Download, Plus, ArrowDown, ArrowUp, Check, X, Truck, Package, Clock as ClockIcon } from 'lucide-react';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
+import { QRCodeSVG } from 'qrcode.react';
 import { auth, db, storage } from './firebase';
 import { signUp, signIn, logOut, onAuthChange } from './services/authService';
 import { addProduct, uploadImage, getProductsByCondition, getUserProducts, deleteProduct } from './services/productService';
-import { getUserOrders, getUserSales, createOrder } from './services/orderService';
-import { getUserTransactions, getUserBalance, createTransaction } from './services/transactionService';
+import { getUserOrders, getUserSales, createOrder, updateOrderStatus } from './services/orderService';
+import { getUserTransactions, getUserBalance, createTransaction, sendMoney, depositMoney, withdrawMoney } from './services/transactionService';
 import { getUserFavorites, addFavorite, removeFavorite, isFavorite } from './services/favoriteService';
-import { uploadProfilePhoto, saveUserProfile, getUserProfile } from './services/userService';
+import { uploadProfilePhoto, saveUserProfile, getUserProfile, getUserByBanhoPayNumber, initializeBanhoPayProfile } from './services/userService';
 import { getUserNotifications, createOrderNotification, createSaleNotification, markAsRead, markAllAsRead } from './services/notificationService';
 import { sendPasswordResetEmail } from 'firebase/auth';
 
@@ -106,6 +107,19 @@ export default function App() {
   const [batteryLevel, setBatteryLevel] = useState(100);
   const [isCharging, setIsCharging] = useState(false);
 
+  // États pour BanhoPay
+  const [banhoPayNumber, setBanhoPayNumber] = useState('');
+  const [showBanhoPayModal, setShowBanhoPayModal] = useState<'deposit' | 'withdraw' | 'send' | 'qrcode' | null>(null);
+  const [banhoPayAmount, setBanhoPayAmount] = useState('');
+  const [banhoPayRecipient, setBanhoPayRecipient] = useState('');
+  const [banhoPayRecipientInfo, setBanhoPayRecipientInfo] = useState<any>(null);
+  const [searchingRecipient, setSearchingRecipient] = useState(false);
+  const [processingBanhoPay, setProcessingBanhoPay] = useState(false);
+  const [depositMethod, setDepositMethod] = useState<string>('');
+  const [depositPhone, setDepositPhone] = useState('');
+  const [withdrawMethod, setWithdrawMethod] = useState<string>('');
+  const [withdrawPhone, setWithdrawPhone] = useState('');
+
   // États pour la page de caisse (checkout)
   const [showCheckout, setShowCheckout] = useState(false);
   const [checkoutProduct, setCheckoutProduct] = useState<any>(null);
@@ -122,6 +136,141 @@ export default function App() {
 
   const hideError = () => {
     setErrorDialog({ show: false, title: '', message: '' });
+  };
+
+  // Rechercher un utilisateur par numéro BanhoPay
+  const searchBanhoPayUser = async (number: string) => {
+    if (number.length < 10) {
+      setBanhoPayRecipientInfo(null);
+      return;
+    }
+    
+    setSearchingRecipient(true);
+    try {
+      const user = await getUserByBanhoPayNumber(number);
+      if (user && user.uid !== currentUser?.uid) {
+        setBanhoPayRecipientInfo(user);
+      } else if (user?.uid === currentUser?.uid) {
+        setBanhoPayRecipientInfo({ error: 'Vous ne pouvez pas vous envoyer de l\'argent' });
+      } else {
+        setBanhoPayRecipientInfo({ error: 'Utilisateur non trouvé' });
+      }
+    } catch (error) {
+      setBanhoPayRecipientInfo({ error: 'Erreur de recherche' });
+    } finally {
+      setSearchingRecipient(false);
+    }
+  };
+
+  // Copier le numéro BanhoPay
+  const copyBanhoPayNumber = async () => {
+    try {
+      await navigator.clipboard.writeText(banhoPayNumber);
+      showError('Copié !', 'Numéro de compte copié dans le presse-papier');
+    } catch (error) {
+      showError('Erreur', 'Impossible de copier');
+    }
+  };
+
+  // Gérer le dépôt BanhoPay
+  const handleDeposit = async () => {
+    if (!banhoPayAmount || parseFloat(banhoPayAmount) <= 0) {
+      showError('Erreur', 'Veuillez entrer un montant valide');
+      return;
+    }
+    const methodNames: Record<string, string> = {
+      orange: 'Orange Money',
+      airtel: 'Airtel Money',
+      mpesa: 'M-Pesa',
+      afrimoney: 'Afrimoney',
+      carte: 'Carte bancaire'
+    };
+    setProcessingBanhoPay(true);
+    try {
+      await depositMoney(currentUser?.uid, parseFloat(banhoPayAmount), methodNames[depositMethod] || 'Mobile Money');
+      await loadUserTransactions(currentUser?.uid);
+      showError('Dépôt réussi !', `${banhoPayAmount}$ ajoutés via ${methodNames[depositMethod]}`);
+      setBanhoPayAmount('');
+      setDepositMethod('');
+      setDepositPhone('');
+      setShowBanhoPayModal(null);
+    } catch (error: any) {
+      showError('Erreur', error.message || 'Erreur lors du dépôt');
+    } finally {
+      setProcessingBanhoPay(false);
+    }
+  };
+
+  // Gérer le retrait BanhoPay
+  const handleWithdraw = async () => {
+    if (!banhoPayAmount || parseFloat(banhoPayAmount) <= 0) {
+      showError('Erreur', 'Veuillez entrer un montant valide');
+      return;
+    }
+    if (parseFloat(banhoPayAmount) > userBalance) {
+      showError('Erreur', 'Solde insuffisant');
+      return;
+    }
+    const methodNames: Record<string, string> = {
+      agent: 'Agent agréé BanhoPay',
+      shop: 'Shop relais BanhoPay',
+      orange: 'Orange Money',
+      airtel: 'Airtel Money',
+      mpesa: 'M-Pesa',
+      afrimoney: 'Afrimoney'
+    };
+    setProcessingBanhoPay(true);
+    try {
+      await withdrawMoney(currentUser?.uid, parseFloat(banhoPayAmount), methodNames[withdrawMethod] || 'Mobile Money');
+      await loadUserTransactions(currentUser?.uid);
+      showError('Retrait réussi !', `${banhoPayAmount}$ retirés via ${methodNames[withdrawMethod]}`);
+      setBanhoPayAmount('');
+      setWithdrawMethod('');
+      setWithdrawPhone('');
+      setShowBanhoPayModal(null);
+    } catch (error: any) {
+      showError('Erreur', error.message || 'Erreur lors du retrait');
+    } finally {
+      setProcessingBanhoPay(false);
+    }
+  };
+
+  // Gérer l'envoi BanhoPay
+  const handleSendMoney = async () => {
+    if (!banhoPayAmount || parseFloat(banhoPayAmount) <= 0) {
+      showError('Erreur', 'Veuillez entrer un montant valide');
+      return;
+    }
+    if (!banhoPayRecipientInfo || banhoPayRecipientInfo.error) {
+      showError('Erreur', 'Destinataire invalide');
+      return;
+    }
+    if (parseFloat(banhoPayAmount) > userBalance) {
+      showError('Erreur', 'Solde insuffisant');
+      return;
+    }
+    setProcessingBanhoPay(true);
+    try {
+      await sendMoney(
+        currentUser?.uid,
+        currentUser?.displayName || 'Utilisateur',
+        banhoPayNumber,
+        banhoPayRecipientInfo.uid,
+        banhoPayRecipientInfo.displayName,
+        banhoPayRecipientInfo.banhoPayNumber,
+        parseFloat(banhoPayAmount)
+      );
+      await loadUserTransactions(currentUser?.uid);
+      showError('Envoi réussi !', `${banhoPayAmount}$ envoyés à ${banhoPayRecipientInfo.displayName}`);
+      setBanhoPayAmount('');
+      setBanhoPayRecipient('');
+      setBanhoPayRecipientInfo(null);
+      setShowBanhoPayModal(null);
+    } catch (error: any) {
+      showError('Erreur', error.message || 'Erreur lors de l\'envoi');
+    } finally {
+      setProcessingBanhoPay(false);
+    }
   };
 
   // Fonction pour convertir base64 en File
@@ -314,6 +463,8 @@ export default function App() {
       // Créer une commande
       const order = {
         userId: currentUser.uid,
+        buyerName: currentUser.displayName || 'Client',
+        buyerEmail: currentUser.email || '',
         items: [
           {
             productId: product.id,
@@ -326,7 +477,7 @@ export default function App() {
           }
         ],
         total: product.price,
-        status: 'En cours' as const,
+        status: 'En attente' as const,
         deliveryAddress: product.location || 'À définir',
         paymentMethod: 'BanhoPay'
       };
@@ -399,12 +550,11 @@ export default function App() {
 
   // Observer l'état d'authentification Firebase
   useEffect(() => {
-    const unsubscribe = onAuthChange((user) => {
+    const unsubscribe = onAuthChange(async (user) => {
       if (user) {
         setCurrentUser(user);
         setIsAuthenticated(true);
         setShowOnboarding(false);
-        // Fermer le dialogue d'erreur si l'utilisateur se connecte avec succès
         hideError();
         
         // Charger les données de l'utilisateur
@@ -415,8 +565,16 @@ export default function App() {
         loadUserProducts(user.uid);
         loadUserNotifications(user.uid);
         
-        // Charger le profil
+        // Charger le profil et initialiser BanhoPay
         setProfileName(user.displayName || '');
+        
+        // Initialiser le numéro BanhoPay
+        try {
+          const banhoNumber = await initializeBanhoPayProfile(user.uid, user.displayName || '', user.email || '');
+          setBanhoPayNumber(banhoNumber);
+        } catch (error) {
+          console.error('Erreur initialisation BanhoPay:', error);
+        }
       } else {
         setCurrentUser(null);
         setIsAuthenticated(false);
@@ -426,6 +584,7 @@ export default function App() {
         setUserFavorites([]);
         setFavoriteProductIds([]);
         setUserSales([]);
+        setBanhoPayNumber('');
       }
       setIsInitialLoad(false);
     });
@@ -1863,12 +2022,8 @@ export default function App() {
         <div className="p-6 md:p-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-black text-gray-900">BanhoPay</h1>
-          <button className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100">
-            <div className="w-6 h-6 text-emerald-900 flex items-center justify-center">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </div>
+          <button onClick={() => setShowBanhoPayModal('qrcode')} className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100">
+            <QrCode className="w-6 h-6 text-emerald-900" />
           </button>
         </div>
         
@@ -1943,8 +2098,16 @@ export default function App() {
 
                   <div className="space-y-3">
                     <div>
-                      <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">Numéro de carte</p>
-                      <p className="text-base font-mono tracking-[0.2em]">4532 •••• •••• 8901</p>
+                      <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">Numéro de compte</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-mono tracking-[0.1em] text-emerald-400">{banhoPayNumber || 'Chargement...'}</p>
+                        <button 
+                          onClick={(e) => {e.stopPropagation(); copyBanhoPayNumber();}}
+                          className="p-1 hover:bg-white/10 rounded transition-colors"
+                        >
+                          <Copy className="w-3 h-3 text-white/60" />
+                        </button>
+                      </div>
                     </div>
                     
                     <div className="flex gap-6">
@@ -1956,11 +2119,6 @@ export default function App() {
                         <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">CVV</p>
                         <p className="text-sm font-mono">•••</p>
                       </div>
-                    </div>
-
-                    <div>
-                      <p className="text-[9px] text-white/50 uppercase tracking-widest mb-1">ID Firestore</p>
-                      <p className="text-[10px] font-mono text-emerald-400">{currentUser?.uid?.substring(0, 24) || 'usr_ak_2024_001_banho'}</p>
                     </div>
 
                     <div className="flex gap-6">
@@ -2003,54 +2161,13 @@ export default function App() {
         {/* Action Buttons */}
         <div className="grid grid-cols-4 gap-3 mb-10">
           {[
-            { 
-              label: 'DÉPÔT', 
-              icon: (
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 16V3m0 0l-4 4m4-4l4 4" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21h18v-6H3z" />
-                </svg>
-              ), 
-              color: 'bg-green-50 text-green-600' 
-            },
-            { 
-              label: 'RETRAIT', 
-              icon: (
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 8v13m0 0l-4-4m4 4l4-4" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18v6H3z" />
-                </svg>
-              ), 
-              color: 'bg-red-50 text-red-600' 
-            },
-            { 
-              label: 'ENVOI', 
-              icon: (
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 19V6m0 0l-4 4m4-4l4 4" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 21h14" />
-                </svg>
-              ), 
-              color: 'bg-blue-50 text-blue-600' 
-            },
-            { 
-              label: 'QR CODE', 
-              icon: (
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                  <rect x="3" y="3" width="7" height="7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>
-                  <rect x="14" y="3" width="7" height="7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>
-                  <rect x="3" y="14" width="7" height="7" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"/>
-                  <rect x="5" y="5" width="3" height="3" fill="currentColor"/>
-                  <rect x="16" y="5" width="3" height="3" fill="currentColor"/>
-                  <rect x="5" y="16" width="3" height="3" fill="currentColor"/>
-                  <path strokeWidth={2.5} strokeLinecap="round" d="M14 14h7M14 17h4M14 20h7M18 17v4"/>
-                </svg>
-              ), 
-              color: 'bg-emerald-50 text-emerald-600' 
-            }
+            { label: 'DÉPÔT', icon: <ArrowDown className="w-6 h-6" />, color: 'bg-green-50 text-green-600', action: () => setShowBanhoPayModal('deposit') },
+            { label: 'RETRAIT', icon: <ArrowUp className="w-6 h-6" />, color: 'bg-red-50 text-red-600', action: () => setShowBanhoPayModal('withdraw') },
+            { label: 'ENVOI', icon: <Send className="w-6 h-6" />, color: 'bg-blue-50 text-blue-600', action: () => setShowBanhoPayModal('send') },
+            { label: 'QR CODE', icon: <QrCode className="w-6 h-6" />, color: 'bg-emerald-50 text-emerald-600', action: () => setShowBanhoPayModal('qrcode') }
           ].map((btn, i) => (
             <div key={i} className="flex flex-col items-center gap-2">
-              <button className={`${btn.color} w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-transform`}>
+              <button onClick={btn.action} className={`${btn.color} w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm active:scale-90 transition-transform`}>
                 {btn.icon}
               </button>
               <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{btn.label}</span>
@@ -2247,30 +2364,60 @@ export default function App() {
                 <div className="text-center py-12">
                   <ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500 font-bold">Aucun achat</p>
+                  <p className="text-xs text-gray-400 mt-2">Vos achats apparaîtront ici</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {userOrders.map(order => (
-                    <div key={order.id} className="bg-white p-5 rounded-2xl border border-gray-100">
-                      <div className="flex justify-between mb-3">
+                    <div key={order.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-3">
                         <div>
-                          <p className="font-black text-sm">#{order.id?.substring(0, 8).toUpperCase()}</p>
+                          <p className="font-black text-sm text-emerald-900">
+                            {(order as any).orderId || `#${order.id?.substring(0, 8).toUpperCase()}`}
+                          </p>
                           <p className="text-xs text-gray-500">
-                            {order.createdAt?.toDate().toLocaleDateString('fr-FR')}
+                            {order.createdAt?.toDate().toLocaleDateString('fr-FR', { 
+                              day: 'numeric', month: 'long', year: 'numeric' 
+                            })}
                           </p>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 ${
+                          order.status === 'En attente' ? 'bg-yellow-100 text-yellow-700' :
                           order.status === 'En cours' ? 'bg-orange-100 text-orange-600' :
+                          order.status === 'En route' ? 'bg-blue-100 text-blue-600' :
                           order.status === 'Livrée' ? 'bg-emerald-100 text-emerald-600' :
                           'bg-red-100 text-red-600'
                         }`}>
+                          {order.status === 'En attente' && <ClockIcon className="w-3 h-3" />}
+                          {order.status === 'En cours' && <Package className="w-3 h-3" />}
+                          {order.status === 'En route' && <Truck className="w-3 h-3" />}
+                          {order.status === 'Livrée' && <Check className="w-3 h-3" />}
                           {order.status}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-700 mb-3">
-                        {order.items.map((item: any) => item.productName).join(', ')}
-                      </p>
-                      <p className="text-lg font-black text-emerald-900">${order.total}</p>
+                      
+                      {/* Items */}
+                      <div className="space-y-2 mb-3">
+                        {order.items.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-center gap-3">
+                            <img 
+                              src={item.productImage} 
+                              alt={item.productName}
+                              className="w-12 h-12 rounded-xl object-cover"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm font-bold text-gray-800">{item.productName}</p>
+                              <p className="text-xs text-gray-500">Vendeur: {item.sellerName}</p>
+                            </div>
+                            <p className="font-bold text-emerald-900">${item.price}</p>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <div className="border-t pt-3 flex justify-between items-center">
+                        <span className="text-sm text-gray-500">Total</span>
+                        <p className="text-lg font-black text-emerald-900">${order.total}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2302,32 +2449,118 @@ export default function App() {
                 <div className="text-center py-12">
                   <ShoppingBag className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500 font-bold">Aucune vente</p>
+                  <p className="text-xs text-gray-400 mt-2">Vos ventes apparaîtront ici</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {userSales.map(sale => (
-                    <div key={sale.id} className="bg-white p-5 rounded-2xl border border-gray-100">
-                      <div className="flex justify-between mb-3">
+                    <div key={sale.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+                      <div className="flex justify-between items-start mb-3">
                         <div>
-                          <p className="font-black text-sm">#{sale.id?.substring(0, 8).toUpperCase()}</p>
+                          <p className="font-black text-sm text-emerald-900">
+                            {(sale as any).orderId || `#${sale.id?.substring(0, 8).toUpperCase()}`}
+                          </p>
                           <p className="text-xs text-gray-500">
-                            {sale.createdAt?.toDate().toLocaleDateString('fr-FR')}
+                            {sale.createdAt?.toDate().toLocaleDateString('fr-FR', { 
+                              day: 'numeric', month: 'long', year: 'numeric' 
+                            })}
+                          </p>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Acheteur: {(sale as any).buyerName || 'Client'}
                           </p>
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 ${
+                          sale.status === 'En attente' ? 'bg-yellow-100 text-yellow-700' :
                           sale.status === 'En cours' ? 'bg-orange-100 text-orange-600' :
+                          sale.status === 'En route' ? 'bg-blue-100 text-blue-600' :
                           sale.status === 'Livrée' ? 'bg-emerald-100 text-emerald-600' :
                           'bg-red-100 text-red-600'
                         }`}>
+                          {sale.status === 'En attente' && <ClockIcon className="w-3 h-3" />}
+                          {sale.status === 'En cours' && <Package className="w-3 h-3" />}
+                          {sale.status === 'En route' && <Truck className="w-3 h-3" />}
+                          {sale.status === 'Livrée' && <Check className="w-3 h-3" />}
                           {sale.status}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-700 mb-3">
-                        {sale.items.filter((item: any) => item.sellerId === currentUser?.uid).map((item: any) => item.productName).join(', ')}
-                      </p>
-                      <p className="text-lg font-black text-emerald-900">
-                        ${sale.items.filter((item: any) => item.sellerId === currentUser?.uid).reduce((sum: number, item: any) => sum + item.price, 0)}
-                      </p>
+                      
+                      {/* Items vendus */}
+                      <div className="space-y-2 mb-3">
+                        {sale.items.map((item: any, idx: number) => (
+                          <div key={idx} className="flex items-center gap-3">
+                            <img 
+                              src={item.productImage} 
+                              alt={item.productName}
+                              className="w-12 h-12 rounded-xl object-cover"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm font-bold text-gray-800">{item.productName}</p>
+                              <p className="text-xs text-gray-500">Qté: {item.quantity || 1}</p>
+                            </div>
+                            <p className="font-bold text-emerald-900">${item.price}</p>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {/* Boutons de changement de statut */}
+                      {sale.status !== 'Livrée' && sale.status !== 'Annulée' && (
+                        <div className="border-t pt-3 mt-3">
+                          <p className="text-xs text-gray-500 mb-2">Changer le statut :</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {sale.status === 'En attente' && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await updateOrderStatus(sale.id!, 'En cours');
+                                    loadUserSales(currentUser?.uid);
+                                    showError('Statut mis à jour', 'Commande en cours de préparation');
+                                  } catch (error) {
+                                    showError('Erreur', 'Impossible de mettre à jour le statut');
+                                  }
+                                }}
+                                className="px-3 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                              >
+                                <Package className="w-3 h-3" /> En cours
+                              </button>
+                            )}
+                            {(sale.status === 'En attente' || sale.status === 'En cours') && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await updateOrderStatus(sale.id!, 'En route');
+                                    loadUserSales(currentUser?.uid);
+                                    showError('Statut mis à jour', 'Commande en route');
+                                  } catch (error) {
+                                    showError('Erreur', 'Impossible de mettre à jour le statut');
+                                  }
+                                }}
+                                className="px-3 py-2 bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                              >
+                                <Truck className="w-3 h-3" /> En route
+                              </button>
+                            )}
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await updateOrderStatus(sale.id!, 'Livrée');
+                                  loadUserSales(currentUser?.uid);
+                                  showError('Statut mis à jour', 'Commande livrée !');
+                                } catch (error) {
+                                  showError('Erreur', 'Impossible de mettre à jour le statut');
+                                }
+                              }}
+                              className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                            >
+                              <Check className="w-3 h-3" /> Livrée
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="border-t pt-3 mt-3 flex justify-between items-center">
+                        <span className="text-sm text-gray-500">Total</span>
+                        <p className="text-lg font-black text-emerald-900">${sale.total}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2936,9 +3169,14 @@ export default function App() {
                   : 'Janvier 2023'}
               </span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-500">ID Firestore</span>
-              <span className="text-xs font-mono text-emerald-600">{currentUser?.uid?.substring(0, 20) || 'usr_ak_2024_001_banho'}...</span>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-500">N° de compte</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-emerald-600">{banhoPayNumber || 'Chargement...'}</span>
+                <button onClick={copyBanhoPayNumber} className="p-1 hover:bg-gray-100 rounded">
+                  <Copy className="w-3 h-3 text-gray-400" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3036,6 +3274,8 @@ export default function App() {
           // Créer la commande
           const order = {
             userId: currentUser.uid,
+            buyerName: currentUser.displayName || 'Client',
+            buyerEmail: currentUser.email || '',
             items: [
               {
                 productId: checkoutProduct.id,
@@ -3048,7 +3288,7 @@ export default function App() {
               }
             ],
             total: checkoutProduct.price,
-            status: 'En cours' as const,
+            status: 'En attente' as const,
             deliveryAddress: `${deliveryAddress}, ${deliveryCity}`,
             deliveryPhone: deliveryPhone,
             deliveryNotes: deliveryNotes,
@@ -3876,6 +4116,169 @@ export default function App() {
         className="hidden"
         disabled={uploadingPhoto}
       />
+
+      {/* Modal Dépôt BanhoPay */}
+      {showBanhoPayModal === 'deposit' && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-gray-900">Dépôt</h3>
+              <button onClick={() => {setShowBanhoPayModal(null); setBanhoPayAmount(''); setDepositMethod(''); setDepositPhone('');}} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Moyen de dépôt</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'orange', name: 'Orange Money', color: 'bg-orange-500' },
+                  { id: 'airtel', name: 'Airtel Money', color: 'bg-red-500' },
+                  { id: 'mpesa', name: 'M-Pesa', color: 'bg-green-600' },
+                  { id: 'afrimoney', name: 'Afrimoney', color: 'bg-blue-500' },
+                  { id: 'carte', name: 'Carte bancaire', color: 'bg-gray-800' },
+                ].map((method) => (
+                  <button
+                    key={method.id}
+                    onClick={() => setDepositMethod(method.id)}
+                    className={`p-3 rounded-xl border-2 text-xs font-bold transition-all ${
+                      depositMethod === method.id ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    <div className={`w-6 h-6 ${method.color} rounded-full mx-auto mb-1`}></div>
+                    {method.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {depositMethod && depositMethod !== 'carte' && (
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">Numéro de téléphone</label>
+                <input type="tel" value={depositPhone} onChange={(e) => setDepositPhone(e.target.value)} placeholder="+243 900 000 000" className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-2xl text-sm font-medium focus:border-emerald-500 focus:outline-none" />
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Montant ($)</label>
+              <input type="number" value={banhoPayAmount} onChange={(e) => setBanhoPayAmount(e.target.value)} placeholder="0.00" className="w-full px-4 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-2xl font-black text-center focus:border-emerald-500 focus:outline-none" />
+            </div>
+            <button onClick={handleDeposit} disabled={processingBanhoPay || !depositMethod || !banhoPayAmount || (depositMethod !== 'carte' && !depositPhone)} className="w-full bg-emerald-600 text-white py-4 rounded-2xl font-black text-sm disabled:opacity-50">
+              {processingBanhoPay ? 'Traitement...' : 'Confirmer le dépôt'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Retrait BanhoPay */}
+      {showBanhoPayModal === 'withdraw' && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-gray-900">Retrait</h3>
+              <button onClick={() => {setShowBanhoPayModal(null); setBanhoPayAmount(''); setWithdrawMethod(''); setWithdrawPhone('');}} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">Solde: <span className="font-bold text-emerald-600">{userBalance.toFixed(2)}$</span></p>
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Moyen de retrait</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'agent', name: 'Agent BanhoPay', color: 'bg-emerald-600' },
+                  { id: 'shop', name: 'Shop BanhoPay', color: 'bg-emerald-800' },
+                  { id: 'orange', name: 'Orange Money', color: 'bg-orange-500' },
+                  { id: 'airtel', name: 'Airtel Money', color: 'bg-red-500' },
+                  { id: 'mpesa', name: 'M-Pesa', color: 'bg-green-600' },
+                  { id: 'afrimoney', name: 'Afrimoney', color: 'bg-blue-500' },
+                ].map((method) => (
+                  <button
+                    key={method.id}
+                    onClick={() => setWithdrawMethod(method.id)}
+                    className={`p-3 rounded-xl border-2 text-xs font-bold transition-all ${
+                      withdrawMethod === method.id ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    <div className={`w-6 h-6 ${method.color} rounded-full mx-auto mb-1`}></div>
+                    {method.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {withdrawMethod && !['agent', 'shop'].includes(withdrawMethod) && (
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">Numéro de téléphone</label>
+                <input type="tel" value={withdrawPhone} onChange={(e) => setWithdrawPhone(e.target.value)} placeholder="+243 900 000 000" className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-2xl text-sm font-medium focus:border-red-500 focus:outline-none" />
+              </div>
+            )}
+            {['agent', 'shop'].includes(withdrawMethod) && (
+              <div className="mb-4 p-3 bg-emerald-50 rounded-xl">
+                <p className="text-xs text-emerald-700"><span className="font-bold">Info:</span> Présentez votre QR Code à l'agent.</p>
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Montant ($)</label>
+              <input type="number" value={banhoPayAmount} onChange={(e) => setBanhoPayAmount(e.target.value)} placeholder="0.00" className="w-full px-4 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-2xl font-black text-center focus:border-red-500 focus:outline-none" />
+            </div>
+            <button onClick={handleWithdraw} disabled={processingBanhoPay || !withdrawMethod || !banhoPayAmount || (!['agent', 'shop'].includes(withdrawMethod) && !withdrawPhone)} className="w-full bg-red-600 text-white py-4 rounded-2xl font-black text-sm disabled:opacity-50">
+              {processingBanhoPay ? 'Traitement...' : 'Confirmer le retrait'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Envoi BanhoPay */}
+      {showBanhoPayModal === 'send' && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-gray-900">Envoyer</h3>
+              <button onClick={() => {setShowBanhoPayModal(null); setBanhoPayRecipient(''); setBanhoPayRecipientInfo(null); setBanhoPayAmount('');}} className="p-2 hover:bg-gray-100 rounded-full">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">Solde: <span className="font-bold text-emerald-600">{userBalance.toFixed(2)}$</span></p>
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Numéro BanhoPay</label>
+              <input type="text" value={banhoPayRecipient} onChange={(e) => { setBanhoPayRecipient(e.target.value); searchBanhoPayUser(e.target.value); }} placeholder="BanhoPay0011XXX" className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-2xl text-sm font-medium focus:border-emerald-500 focus:outline-none" />
+              {searchingRecipient && <p className="text-xs text-gray-400 mt-2">Recherche...</p>}
+              {banhoPayRecipientInfo && !banhoPayRecipientInfo.error && (
+                <div className="mt-3 p-3 bg-emerald-50 rounded-xl flex items-center gap-3">
+                  <div className="w-10 h-10 bg-emerald-600 rounded-full flex items-center justify-center text-white font-bold">{banhoPayRecipientInfo.displayName?.charAt(0) || '?'}</div>
+                  <div><p className="font-bold text-emerald-900">{banhoPayRecipientInfo.displayName}</p><p className="text-xs text-emerald-600">{banhoPayRecipientInfo.banhoPayNumber}</p></div>
+                  <Check className="w-5 h-5 text-emerald-600 ml-auto" />
+                </div>
+              )}
+              {banhoPayRecipientInfo?.error && <p className="text-xs text-red-500 mt-2">{banhoPayRecipientInfo.error}</p>}
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-bold text-gray-700 mb-2">Montant ($)</label>
+              <input type="number" value={banhoPayAmount} onChange={(e) => setBanhoPayAmount(e.target.value)} placeholder="0.00" className="w-full px-4 py-4 bg-gray-50 border-2 border-gray-200 rounded-2xl text-2xl font-black text-center focus:border-emerald-500 focus:outline-none" />
+            </div>
+            <button onClick={handleSendMoney} disabled={processingBanhoPay || !banhoPayRecipientInfo || banhoPayRecipientInfo.error} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-sm disabled:opacity-50">
+              {processingBanhoPay ? 'Traitement...' : 'Envoyer'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal QR Code BanhoPay */}
+      {showBanhoPayModal === 'qrcode' && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm text-center">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-gray-900">Mon QR Code</h3>
+              <button onClick={() => setShowBanhoPayModal(null)} className="p-2 hover:bg-gray-100 rounded-full"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border-2 border-gray-100 inline-block mb-4">
+              <QRCodeSVG value={`banhopay://${banhoPayNumber}?name=${encodeURIComponent(currentUser?.displayName || '')}`} size={200} level="H" includeMargin={true} />
+            </div>
+            <p className="text-lg font-black text-emerald-900 mb-2">{currentUser?.displayName}</p>
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <p className="text-sm font-mono text-gray-600">{banhoPayNumber}</p>
+              <button onClick={copyBanhoPayNumber} className="p-1 hover:bg-gray-100 rounded"><Copy className="w-4 h-4 text-gray-400" /></button>
+            </div>
+            <p className="text-xs text-gray-400">Scannez ce code pour recevoir un paiement</p>
+          </div>
+        </div>
+      )}
       
       {/* iPhone Frame Container - Only on desktop */}
       <div className="w-full h-full md:w-[430px] md:h-[900px] bg-gray-50 md:rounded-[4rem] md:border-[8px] md:border-black relative overflow-hidden md:shadow-[0_50px_100px_rgba(0,0,0,0.5)]">
