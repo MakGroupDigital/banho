@@ -38,8 +38,16 @@
         body {
             font-family: 'Inter', sans-serif;
             -webkit-tap-highlight-color: transparent;
-            overflow: hidden; /* Prevent body scroll to maintain app shell feel */
             background-color: #171717;
+            /* Permettre le scroll sur mobile/Capacitor */
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        #root {
+            min-height: 100vh;
+            min-height: 100dvh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
         /* Hide scrollbars for the internal mobile container */
         .no-scrollbar::-webkit-scrollbar {

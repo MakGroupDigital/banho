@@ -510,6 +510,7 @@ export default function App() {
     // Vérifier la taille (max 2MB)
     if (file.size > 2 * 1024 * 1024) {
       showError('Fichier trop volumineux', 'La photo ne doit pas dépasser 2 MB.');
+      e.target.value = '';
       return;
     }
 
@@ -526,6 +527,8 @@ export default function App() {
       showError('Erreur', 'Une erreur est survenue lors de l\'upload de la photo.');
     } finally {
       setUploadingPhoto(false);
+      // Réinitialiser l'input pour permettre de sélectionner le même fichier
+      e.target.value = '';
     }
   };
 
@@ -1507,7 +1510,8 @@ export default function App() {
     };
 
     return (
-      <div className="p-6 md:p-8 pb-24 md:pb-32">
+      <div className="min-h-screen pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="p-6 md:p-8">
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
@@ -1615,8 +1619,6 @@ export default function App() {
       {/* Categories avec icônes personnalisées */}
       <div 
         className="flex gap-3 overflow-x-auto mb-8 no-scrollbar pb-2"
-        style={{ touchAction: 'pan-x' }}
-        onTouchMove={(e) => e.stopPropagation()}
       >
         {categories.map((cat, index) => (
           <button 
@@ -1701,17 +1703,27 @@ export default function App() {
         ))}
         </div>
       )}
+        </div>
     </div>
   );
   };
 
   const WalletView = () => {
     const [isCardFlipped, setIsCardFlipped] = useState(false);
+    const [isFlipping, setIsFlipping] = useState(false);
     const [showBalance, setShowBalance] = useState(false);
     const [showPin, setShowPin] = useState(false);
 
+    const handleFlipCard = (toFlipped: boolean) => {
+      if (isFlipping) return;
+      setIsFlipping(true);
+      setIsCardFlipped(toFlipped);
+      setTimeout(() => setIsFlipping(false), 700);
+    };
+
     return (
-      <div className="p-6 md:p-8 pb-24 md:pb-32">
+      <div className="min-h-screen pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="p-6 md:p-8">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-3xl font-black text-gray-900">BanhoPay</h1>
           <button className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100">
@@ -1736,7 +1748,7 @@ export default function App() {
             <div 
               className="absolute inset-0 bg-gradient-to-br from-emerald-700 via-emerald-800 to-emerald-900 p-6 rounded-[1.5rem] shadow-2xl relative overflow-hidden text-white cursor-pointer"
               style={{backfaceVisibility: 'hidden'}}
-              onClick={() => setIsCardFlipped(true)}
+              onClick={() => handleFlipCard(true)}
             >
               <div className="absolute -top-20 -right-20 w-64 h-64 bg-orange-500/10 rounded-full blur-[80px]" />
               
@@ -1781,7 +1793,7 @@ export default function App() {
                 backfaceVisibility: 'hidden',
                 transform: 'rotateY(180deg)'
               }}
-              onClick={() => setIsCardFlipped(false)}
+              onClick={() => handleFlipCard(false)}
             >
               <div className="h-full flex flex-col justify-between">
                 <div>
@@ -1963,6 +1975,7 @@ export default function App() {
             })}
           </div>
         )}
+        </div>
       </div>
     );
   };
@@ -1975,7 +1988,8 @@ export default function App() {
       : userOrders.filter(order => order.status === filterStatus);
 
     return (
-      <div className="p-6 md:p-8 pb-24 md:pb-32">
+      <div className="min-h-screen pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="p-6 md:p-8">
       <h1 className="text-3xl font-black text-gray-900 mb-8">Mes Commandes</h1>
       
       {/* Filtres de commandes */}
@@ -2050,6 +2064,7 @@ export default function App() {
           })}
         </div>
       )}
+        </div>
     </div>
   );
   };
@@ -2074,7 +2089,7 @@ export default function App() {
     switch (activeProfilePage) {
       case 'orders':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="Mes commandes" />
             <div className="px-6">
               {/* Tabs */}
@@ -2129,7 +2144,7 @@ export default function App() {
 
       case 'sales':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="Mes ventes" />
             <div className="px-6">
               {/* Tabs */}
@@ -2186,7 +2201,7 @@ export default function App() {
 
       case 'favorites':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="Mes favoris" />
             <div className="px-6">
               {loadingFavorites ? (
@@ -2226,7 +2241,7 @@ export default function App() {
 
       case 'wallet':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="BanhoPay & Paiements" />
             <div className="px-6">
               {/* Solde */}
@@ -2291,7 +2306,7 @@ export default function App() {
 
       case 'edit-profile':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             <PageHeader title="Modifier le profil" />
             <div className="px-6">
               {/* Photo de profil */}
@@ -2304,10 +2319,20 @@ export default function App() {
                       <UserIcon className="w-16 h-16 text-white" />
                     )}
                   </div>
-                  <label className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer">
+                  <div 
+                    className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer"
+                    onClick={() => {
+                      if (!uploadingPhoto) {
+                        const input = document.getElementById('profile-photo-input-edit');
+                        if (input) input.click();
+                      }
+                    }}
+                  >
                     <input
+                      id="profile-photo-input-edit"
                       type="file"
                       accept="image/*"
+                      capture="environment"
                       onChange={handleProfilePhotoChange}
                       className="hidden"
                       disabled={uploadingPhoto}
@@ -2317,7 +2342,7 @@ export default function App() {
                     ) : (
                       <Camera className="w-5 h-5 text-white" />
                     )}
-                  </label>
+                  </div>
                 </div>
               </div>
 
@@ -2404,7 +2429,7 @@ export default function App() {
 
       case 'notifications':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="Notifications" />
             <div className="px-6">
               {/* Bouton marquer tout comme lu */}
@@ -2484,7 +2509,7 @@ export default function App() {
 
       case 'security':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="Sécurité & Confidentialité" />
             <div className="px-6">
               <div className="space-y-4">
@@ -2521,7 +2546,7 @@ export default function App() {
 
       case 'support':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="Aide & Support" />
             <div className="px-6">
               {/* Contact rapide */}
@@ -2559,7 +2584,7 @@ export default function App() {
 
       case 'settings':
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title="Paramètres généraux" />
             <div className="px-6">
               <div className="space-y-6">
@@ -2618,7 +2643,7 @@ export default function App() {
       // Pages en développement
       default:
         return (
-          <div className="h-screen bg-gray-50 pb-32 overflow-y-auto">
+          <div className="min-h-screen bg-gray-50 pb-40">
             <PageHeader title={activeProfilePage || 'Page'} />
             <div className="px-6 text-center py-12">
               <p className="text-gray-500">Page en cours de développement</p>
@@ -2636,7 +2661,8 @@ export default function App() {
 
     // Sinon afficher la page principale du profil
     return (
-      <div className="p-6 md:p-8 pb-24 md:pb-32">
+      <div className="min-h-screen pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="p-6 md:p-8">
         {/* Header Profil */}
         <div className="text-center mb-8">
           <div className="relative inline-block">
@@ -2647,21 +2673,29 @@ export default function App() {
                 <UserIcon className="w-16 h-16 text-white" />
               )}
             </div>
-            <div className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer">
-              <label className="w-full h-full flex items-center justify-center cursor-pointer">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleProfilePhotoChange}
-                  className="hidden"
-                  disabled={uploadingPhoto}
-                />
-                {uploadingPhoto ? (
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <Camera className="w-5 h-5 text-white" />
-                )}
-              </label>
+            <div 
+              className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer"
+              onClick={() => {
+                if (!uploadingPhoto) {
+                  const input = document.getElementById('profile-photo-input-main');
+                  if (input) input.click();
+                }
+              }}
+            >
+              <input
+                id="profile-photo-input-main"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleProfilePhotoChange}
+                className="hidden"
+                disabled={uploadingPhoto}
+              />
+              {uploadingPhoto ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <Camera className="w-5 h-5 text-white" />
+              )}
             </div>
           </div>
           <h2 className="text-2xl font-black text-gray-900">{currentUser?.displayName || 'Utilisateur'}</h2>
@@ -2771,6 +2805,7 @@ export default function App() {
         >
           Déconnexion
         </button>
+        </div>
       </div>
     );
   };
@@ -3163,7 +3198,7 @@ export default function App() {
       const availableCategories = addProductType === 'services' ? serviceCategories : productCategories;
 
       return (
-        <div className="min-h-screen bg-gray-50 pb-32">
+        <div className="min-h-screen bg-gray-50 pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           {/* Header */}
           <div className="sticky top-0 bg-white/90 backdrop-blur-xl z-50 px-6 py-4 flex items-center justify-between border-b border-gray-100">
             <button 
@@ -3361,7 +3396,7 @@ export default function App() {
     // Si un produit est sélectionné, afficher la page de détails
     if (selectedProduct) {
       return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 pb-24 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
           {/* Header avec bouton retour */}
           <div className="sticky top-0 bg-white/90 backdrop-blur-xl z-50 px-6 py-4 flex items-center justify-between border-b border-gray-100">
             <button 

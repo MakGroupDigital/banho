@@ -2,19 +2,29 @@
 * {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
+  box-sizing: border-box;
 }
 
 html {
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  height: 100%;
 }
 
 body {
   margin: 0;
   padding: 0;
-  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#root {
+  min-height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Fix scroll sur mobile pour les pages de profil */
@@ -23,12 +33,12 @@ body {
   min-height: 100dvh; /* Dynamic viewport height pour mobile */
 }
 
-/* Amélioration du scroll sur mobile */
+/* Amélioration du scroll sur mobile - IMPORTANT pour Capacitor */
 .overflow-y-auto,
-.overflow-auto {
+.overflow-auto,
+[class*="min-h-screen"] {
   -webkit-overflow-scrolling: touch;
-  scroll-behavior: smooth;
-  overscroll-behavior-y: contain;
+  overflow-y: auto;
 }
 
 /* Scroll container pour les pages */
