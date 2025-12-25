@@ -4,6 +4,12 @@ runConfig:
   maxInstances: 2
   cpu: 1
   memoryMiB: 512
+  concurrency: 80
+
+# Build configuration
+env:
+  - variable: NODE_ENV
+    value: production
 
 # Specify the output directory from Vite build
 outputDirectory: dist

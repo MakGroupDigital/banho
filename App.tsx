@@ -1,15 +1,33 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { ShoppingBag, Wallet, MessageSquare, User as UserIcon, Eye, EyeOff, ArrowUpRight, Search, Heart, Bell, Shield, HelpCircle, Settings, Camera } from 'lucide-react';
+import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
 import { auth, db, storage } from './firebase';
 import { signUp, signIn, logOut, onAuthChange } from './services/authService';
-import { addProduct, uploadImage, getProductsByCondition } from './services/productService';
+import { addProduct, uploadImage, getProductsByCondition, getUserProducts, deleteProduct } from './services/productService';
 import { getUserOrders, getUserSales, createOrder } from './services/orderService';
 import { getUserTransactions, getUserBalance, createTransaction } from './services/transactionService';
 import { getUserFavorites, addFavorite, removeFavorite, isFavorite } from './services/favoriteService';
 import { uploadProfilePhoto, saveUserProfile, getUserProfile } from './services/userService';
 import { getUserNotifications, createOrderNotification, createSaleNotification, markAsRead, markAllAsRead } from './services/notificationService';
 import { sendPasswordResetEmail } from 'firebase/auth';
+
+// Composant Clock isolé pour éviter les re-renders du composant principal
+const Clock = memo(() => {
+  const [time, setTime] = useState(new Date());
+  
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  
+  return (
+    <span>
+      {time.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', hour12: false })}
+    </span>
+  );
+});
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -65,6 +83,9 @@ export default function App() {
   const [userSales, setUserSales] = useState<any[]>([]);
   const [loadingSales, setLoadingSales] = useState(false);
   
+  // États pour les produits de l'utilisateur
+  const [userProducts, setUserProducts] = useState<any[]>([]);
+  const [loadingUserProducts, setLoadingUserProducts] = useState(false);
   // États pour les pages de profil
   const [activeProfilePage, setActiveProfilePage] = useState<string | null>(null);
   
@@ -81,8 +102,7 @@ export default function App() {
   const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // États pour l'heure et la batterie réelles
-  const [currentTime, setCurrentTime] = useState(new Date());
+  // États pour la batterie réelle
   const [batteryLevel, setBatteryLevel] = useState(100);
   const [isCharging, setIsCharging] = useState(false);
 
@@ -104,15 +124,50 @@ export default function App() {
     setErrorDialog({ show: false, title: '', message: '' });
   };
 
-  // Gérer la sélection d'images
+  // Fonction pour convertir base64 en File
+  const base64ToFile = async (base64: string, filename: string): Promise<File> => {
+    const res = await fetch(base64);
+    const blob = await res.blob();
+    return new File([blob], filename, { type: blob.type || 'image/jpeg' });
+  };
+
+  // Gérer la sélection d'images avec Capacitor Camera sur mobile
+  const handleImageSelectMobile = async () => {
+    try {
+      const image = await CapacitorCamera.getPhoto({
+        quality: 80,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Prompt, // Permet de choisir entre caméra et galerie
+        width: 1024,
+        height: 1024
+      });
+
+      if (image.dataUrl) {
+        // Créer un File à partir du base64
+        const file = await base64ToFile(image.dataUrl, `image_${Date.now()}.jpg`);
+        
+        setProductImagePreviews(prev => [...prev, image.dataUrl!]);
+        setProductImages(prev => [...prev, file]);
+      }
+    } catch (error: any) {
+      console.log('Image selection cancelled or error:', error);
+      // Ne pas afficher d'erreur si l'utilisateur annule
+      if (error.message && !error.message.includes('cancelled') && !error.message.includes('User cancelled')) {
+        showError('Erreur', 'Impossible de sélectionner l\'image. Veuillez réessayer.');
+      }
+    }
+  };
+
+  // Gérer la sélection d'images (web)
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    const newFiles = Array.from(files).slice(0, 3 - productImages.length);
+    const newFiles = Array.from(files).slice(0, 3 - productImages.length) as File[];
     
     // Créer les previews
-    newFiles.forEach(file => {
+    newFiles.forEach((file: File) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setProductImagePreviews(prev => [...prev, reader.result as string]);
@@ -124,6 +179,20 @@ export default function App() {
     
     // Réinitialiser l'input pour permettre de sélectionner le même fichier
     e.target.value = '';
+  };
+
+  // Fonction unifiée pour ajouter une image
+  const handleAddImage = async () => {
+    if (productImages.length >= 3) return;
+    
+    // Utiliser Capacitor Camera sur mobile natif
+    if (Capacitor.isNativePlatform()) {
+      await handleImageSelectMobile();
+    } else {
+      // Sur web, déclencher l'input file
+      const input = document.getElementById('product-image-input') as HTMLInputElement;
+      if (input) input.click();
+    }
   };
 
   // Supprimer une image
@@ -235,6 +304,12 @@ export default function App() {
       return;
     }
 
+    // Vérifier si l'utilisateur essaie d'acheter son propre produit
+    if (product.userId === currentUser.uid) {
+      showError('Action impossible', 'Vous ne pouvez pas acheter votre propre produit.');
+      return;
+    }
+
     try {
       // Créer une commande
       const order = {
@@ -281,7 +356,8 @@ export default function App() {
       await loadUserNotifications(currentUser.uid);
 
       showError('Commande créée !', `${product.name} a été ajouté au panier et la commande a été créée.`);
-      setActiveTab('orders');
+      setActiveTab('profile');
+      setActiveProfilePage('orders');
     } catch (error) {
       console.error('Erreur lors de l\'ajout au panier:', error);
       showError('Erreur', 'Une erreur est survenue lors de l\'ajout au panier.');
@@ -295,14 +371,6 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [showSplash]);
-
-  // Mise à jour de l'heure en temps réel
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Récupérer le niveau de batterie réel
   useEffect(() => {
@@ -329,15 +397,6 @@ export default function App() {
     getBattery();
   }, []);
 
-  // Formater l'heure
-  const formatTime = useCallback(() => {
-    return currentTime.toLocaleTimeString('fr-FR', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
-  }, [currentTime]);
-
   // Observer l'état d'authentification Firebase
   useEffect(() => {
     const unsubscribe = onAuthChange((user) => {
@@ -353,6 +412,7 @@ export default function App() {
         loadUserTransactions(user.uid);
         loadUserFavorites(user.uid);
         loadUserSales(user.uid);
+        loadUserProducts(user.uid);
         loadUserNotifications(user.uid);
         
         // Charger le profil
@@ -459,6 +519,35 @@ export default function App() {
     }
   };
 
+  // Fonction pour charger les produits de l'utilisateur
+  const loadUserProducts = async (userId: string) => {
+    setLoadingUserProducts(true);
+    try {
+      const products = await getUserProducts(userId);
+      setUserProducts(products);
+    } catch (error) {
+      console.error('Erreur lors du chargement des produits:', error);
+    } finally {
+      setLoadingUserProducts(false);
+    }
+  };
+
+  // Fonction pour supprimer un produit
+  const handleDeleteProduct = async (productId: string) => {
+    try {
+      await deleteProduct(productId);
+      // Recharger les produits
+      if (currentUser) {
+        await loadUserProducts(currentUser.uid);
+        await loadProducts();
+      }
+      showError('Produit supprimé', 'Votre produit a été supprimé avec succès.');
+    } catch (error) {
+      console.error('Erreur lors de la suppression:', error);
+      showError('Erreur', 'Impossible de supprimer le produit.');
+    }
+  };
+
   // Fonction pour charger les notifications de l'utilisateur
   const loadUserNotifications = async (userId: string) => {
     setLoadingNotifications(true);
@@ -502,7 +591,7 @@ export default function App() {
     }
   };
 
-  // Fonction pour changer la photo de profil
+  // Fonction pour changer la photo de profil (web)
   const handleProfilePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
@@ -524,11 +613,59 @@ export default function App() {
       showError('Photo mise à jour !', 'Votre photo de profil a été mise à jour avec succès.');
     } catch (error: any) {
       console.error('Erreur lors de l\'upload:', error);
-      showError('Erreur', 'Une erreur est survenue lors de l\'upload de la photo.');
+      showError('Erreur', error.message || 'Une erreur est survenue lors de l\'upload de la photo.');
     } finally {
       setUploadingPhoto(false);
       // Réinitialiser l'input pour permettre de sélectionner le même fichier
       e.target.value = '';
+    }
+  };
+
+  // Fonction pour changer la photo de profil (mobile avec Capacitor)
+  const handleProfilePhotoChangeMobile = async () => {
+    if (!currentUser) return;
+
+    try {
+      const image = await CapacitorCamera.getPhoto({
+        quality: 80,
+        allowEditing: true,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Prompt,
+        width: 512,
+        height: 512
+      });
+
+      if (image.dataUrl) {
+        setUploadingPhoto(true);
+        
+        // Convertir base64 en File
+        const file = await base64ToFile(image.dataUrl, `profile_${Date.now()}.jpg`);
+        
+        const photoURL = await uploadProfilePhoto(file, currentUser.uid);
+        
+        // Mettre à jour l'état local
+        setCurrentUser({ ...currentUser, photoURL });
+        
+        showError('Photo mise à jour !', 'Votre photo de profil a été mise à jour avec succès.');
+      }
+    } catch (error: any) {
+      console.log('Profile photo selection cancelled or error:', error);
+      if (error.message && !error.message.includes('cancelled') && !error.message.includes('User cancelled')) {
+        showError('Erreur', 'Impossible de changer la photo de profil.');
+      }
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  // Fonction unifiée pour changer la photo de profil
+  const handleChangeProfilePhoto = async () => {
+    if (Capacitor.isNativePlatform()) {
+      await handleProfilePhotoChangeMobile();
+    } else {
+      // Sur web, déclencher l'input file
+      const input = document.getElementById('profile-photo-input') as HTMLInputElement;
+      if (input) input.click();
     }
   };
 
@@ -2089,7 +2226,7 @@ export default function App() {
     switch (activeProfilePage) {
       case 'orders':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50 pb-48" style={{ paddingBottom: '200px' }}>
             <PageHeader title="Mes commandes" />
             <div className="px-6">
               {/* Tabs */}
@@ -2144,7 +2281,7 @@ export default function App() {
 
       case 'sales':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Mes ventes" />
             <div className="px-6">
               {/* Tabs */}
@@ -2199,9 +2336,90 @@ export default function App() {
           </div>
         );
 
+      case 'my-products':
+        return (
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
+            <PageHeader title="Mes produits" />
+            <div className="px-6">
+              {/* Bouton ajouter */}
+              <button
+                onClick={() => {
+                  setActiveProfilePage(null);
+                  setShowAddProduct(true);
+                  setActiveTab('home');
+                }}
+                className="w-full bg-emerald-900 text-white py-4 rounded-2xl font-bold mb-6 flex items-center justify-center gap-2 active:scale-95 transition-transform"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Ajouter un produit
+              </button>
+
+              {loadingUserProducts ? (
+                <div className="text-center py-12">
+                  <div className="w-8 h-8 border-4 border-emerald-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                  <p className="text-gray-500">Chargement...</p>
+                </div>
+              ) : userProducts.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Camera className="w-10 h-10 text-gray-400" />
+                  </div>
+                  <p className="text-gray-500 mb-2">Aucun produit publié</p>
+                  <p className="text-sm text-gray-400">Commencez à vendre en ajoutant votre premier produit</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {userProducts.map((product) => (
+                    <div key={product.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+                      <div className="flex gap-4">
+                        <img 
+                          src={product.image} 
+                          alt={product.name}
+                          className="w-20 h-20 rounded-xl object-cover"
+                        />
+                        <div className="flex-1">
+                          <h3 className="font-bold text-gray-900 mb-1">{product.name}</h3>
+                          <p className="text-emerald-900 font-black">${product.price}</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {product.condition === 'neuve' ? '🆕 Neuf' : product.condition === 'occasion' ? '♻️ Occasion' : '🔧 Service'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-4">
+                        <button
+                          onClick={() => {
+                            setSelectedProduct(product);
+                            setActiveProfilePage(null);
+                            setActiveTab('home');
+                          }}
+                          className="flex-1 py-2 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm active:scale-95 transition-transform"
+                        >
+                          Voir
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm('Voulez-vous vraiment supprimer ce produit ?')) {
+                              handleDeleteProduct(product.id);
+                            }
+                          }}
+                          className="py-2 px-4 bg-red-100 text-red-600 rounded-xl font-bold text-sm active:scale-95 transition-transform"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
       case 'favorites':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Mes favoris" />
             <div className="px-6">
               {loadingFavorites ? (
@@ -2241,7 +2459,7 @@ export default function App() {
 
       case 'wallet':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="BanhoPay & Paiements" />
             <div className="px-6">
               {/* Solde */}
@@ -2306,7 +2524,7 @@ export default function App() {
 
       case 'edit-profile':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px", WebkitOverflowScrolling: "touch" }}>
             <PageHeader title="Modifier le profil" />
             <div className="px-6">
               {/* Photo de profil */}
@@ -2320,23 +2538,9 @@ export default function App() {
                     )}
                   </div>
                   <div 
-                    className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer"
-                    onClick={() => {
-                      if (!uploadingPhoto) {
-                        const input = document.getElementById('profile-photo-input-edit');
-                        if (input) input.click();
-                      }
-                    }}
+                    className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer active:scale-90 transition-transform"
+                    onClick={handleChangeProfilePhoto}
                   >
-                    <input
-                      id="profile-photo-input-edit"
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleProfilePhotoChange}
-                      className="hidden"
-                      disabled={uploadingPhoto}
-                    />
                     {uploadingPhoto ? (
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     ) : (
@@ -2429,7 +2633,7 @@ export default function App() {
 
       case 'notifications':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Notifications" />
             <div className="px-6">
               {/* Bouton marquer tout comme lu */}
@@ -2509,7 +2713,7 @@ export default function App() {
 
       case 'security':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Sécurité & Confidentialité" />
             <div className="px-6">
               <div className="space-y-4">
@@ -2546,7 +2750,7 @@ export default function App() {
 
       case 'support':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Aide & Support" />
             <div className="px-6">
               {/* Contact rapide */}
@@ -2584,7 +2788,7 @@ export default function App() {
 
       case 'settings':
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Paramètres généraux" />
             <div className="px-6">
               <div className="space-y-6">
@@ -2643,7 +2847,7 @@ export default function App() {
       // Pages en développement
       default:
         return (
-          <div className="min-h-screen bg-gray-50 pb-40">
+          <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title={activeProfilePage || 'Page'} />
             <div className="px-6 text-center py-12">
               <p className="text-gray-500">Page en cours de développement</p>
@@ -2674,23 +2878,9 @@ export default function App() {
               )}
             </div>
             <div 
-              className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer"
-              onClick={() => {
-                if (!uploadingPhoto) {
-                  const input = document.getElementById('profile-photo-input-main');
-                  if (input) input.click();
-                }
-              }}
+              className="absolute bottom-4 right-0 w-10 h-10 bg-orange-500 rounded-2xl border-4 border-white flex items-center justify-center shadow-lg cursor-pointer active:scale-90 transition-transform"
+              onClick={handleChangeProfilePhoto}
             >
-              <input
-                id="profile-photo-input-main"
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handleProfilePhotoChange}
-                className="hidden"
-                disabled={uploadingPhoto}
-              />
               {uploadingPhoto ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
               ) : (
@@ -2757,6 +2947,7 @@ export default function App() {
         <div className="space-y-3">
           {[
             { icon: ShoppingBag, label: 'Mes commandes', color: 'text-emerald-900', bg: 'bg-emerald-50', page: 'orders', badge: userOrders.length > 0 ? userOrders.length.toString() : null },
+            { icon: Camera, label: 'Mes produits', color: 'text-indigo-500', bg: 'bg-indigo-50', page: 'my-products', badge: userProducts.length > 0 ? userProducts.length.toString() : null },
             { icon: Wallet, label: 'BanhoPay & Paiements', color: 'text-orange-500', bg: 'bg-orange-50', page: 'wallet' },
             { icon: UserIcon, label: 'Modifier le profil', color: 'text-blue-500', bg: 'bg-blue-50', page: 'edit-profile' },
             { icon: Heart, label: 'Mes favoris', color: 'text-purple-500', bg: 'bg-purple-50', page: 'favorites', badge: userFavorites.length > 0 ? userFavorites.length.toString() : null },
@@ -2890,7 +3081,8 @@ export default function App() {
           setSelectedProduct(null);
 
           showError('Commande confirmée ! 🎉', `Votre commande a été passée avec succès. Vous pouvez suivre son statut dans "Mes commandes".`);
-          setActiveTab('orders');
+          setActiveTab('profile');
+          setActiveProfilePage('orders');
 
         } catch (error: any) {
           console.error('Erreur lors du paiement:', error);
@@ -3198,7 +3390,7 @@ export default function App() {
       const availableCategories = addProductType === 'services' ? serviceCategories : productCategories;
 
       return (
-        <div className="min-h-screen bg-gray-50 pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px", WebkitOverflowScrolling: "touch" }}>
           {/* Header */}
           <div className="sticky top-0 bg-white/90 backdrop-blur-xl z-50 px-6 py-4 flex items-center justify-between border-b border-gray-100">
             <button 
@@ -3297,19 +3489,25 @@ export default function App() {
                   </div>
                 ))}
                 {productImages.length < 3 && (
-                  <label className="aspect-square bg-gray-100 rounded-2xl flex items-center justify-center border-2 border-dashed border-gray-300 cursor-pointer hover:border-emerald-900 transition-colors">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleImageSelect}
-                      className="hidden"
-                    />
+                  <button
+                    type="button"
+                    onClick={handleAddImage}
+                    className="aspect-square bg-gray-100 rounded-2xl flex items-center justify-center border-2 border-dashed border-gray-300 cursor-pointer hover:border-emerald-900 transition-colors active:scale-95"
+                  >
                     <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                     </svg>
-                  </label>
+                  </button>
                 )}
+                {/* Input file caché pour le web */}
+                <input
+                  id="product-image-input"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageSelect}
+                  className="hidden"
+                />
               </div>
             </div>
 
@@ -3520,23 +3718,32 @@ export default function App() {
 
             {/* Boutons d'action - Juste après la catégorie pour être plus visibles */}
             <div className="flex gap-3 mb-6">
-              <button 
-                onClick={() => {
-                  addToCart(selectedProduct);
-                }}
-                className="flex-1 bg-white border-2 border-emerald-900 text-emerald-900 py-4 rounded-2xl font-black text-sm uppercase tracking-wider active:scale-95 transition-transform shadow-md"
-              >
-                + Panier
-              </button>
-              <button 
-                onClick={() => {
-                  setCheckoutProduct(selectedProduct);
-                  setShowCheckout(true);
-                }}
-                className="flex-1 bg-emerald-900 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-wider active:scale-95 transition-transform shadow-lg"
-              >
-                Acheter
-              </button>
+              {/* Afficher les boutons d'achat seulement si ce n'est pas le produit de l'utilisateur */}
+              {selectedProduct.userId !== currentUser?.uid ? (
+                <>
+                  <button 
+                    onClick={() => {
+                      addToCart(selectedProduct);
+                    }}
+                    className="flex-1 bg-white border-2 border-emerald-900 text-emerald-900 py-4 rounded-2xl font-black text-sm uppercase tracking-wider active:scale-95 transition-transform shadow-md"
+                  >
+                    + Panier
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setCheckoutProduct(selectedProduct);
+                      setShowCheckout(true);
+                    }}
+                    className="flex-1 bg-emerald-900 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-wider active:scale-95 transition-transform shadow-lg"
+                  >
+                    Acheter
+                  </button>
+                </>
+              ) : (
+                <div className="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-bold text-sm text-center">
+                  C'est votre produit
+                </div>
+              )}
               <button 
                 onClick={() => {
                   alert('Partager ce produit');
@@ -3660,6 +3867,16 @@ export default function App() {
       {/* Dialogue d'erreur */}
       <ErrorDialog />
       
+      {/* Input file global pour photo de profil (web) */}
+      <input
+        id="profile-photo-input"
+        type="file"
+        accept="image/*"
+        onChange={handleProfilePhotoChange}
+        className="hidden"
+        disabled={uploadingPhoto}
+      />
+      
       {/* iPhone Frame Container - Only on desktop */}
       <div className="w-full h-full md:w-[430px] md:h-[900px] bg-gray-50 md:rounded-[4rem] md:border-[8px] md:border-black relative overflow-hidden md:shadow-[0_50px_100px_rgba(0,0,0,0.5)]">
         
@@ -3675,7 +3892,7 @@ export default function App() {
 
         {/* Mobile Status Bar - Only on mobile */}
         <div className="md:hidden h-12 bg-white flex justify-between items-center px-6 text-sm font-bold text-gray-400 border-b border-gray-100">
-          <span>{formatTime()}</span>
+          <Clock />
           <span className="text-emerald-900 font-black">Banho</span>
           <div className="flex items-center gap-1">
             <span className="text-xs">{batteryLevel}%</span>
@@ -3696,11 +3913,14 @@ export default function App() {
         </div>
 
         {/* Content Area */}
-        <div className="h-full w-full overflow-y-auto overflow-x-hidden no-scrollbar bg-gray-50 md:pt-12">
+        <div className="h-[calc(100vh-48px)] md:h-full w-full overflow-y-auto overflow-x-hidden bg-gray-50 md:pt-12 pb-24 md:pb-28" style={{ WebkitOverflowScrolling: 'touch' }}>
           {renderContent()}
           
+          {/* Spacer pour la navigation en bas */}
+          <div className="h-24 md:h-28"></div>
+          
           {/* Bottom Navigation */}
-          <nav className="fixed md:absolute bottom-0 left-0 right-0 md:inset-x-0 bg-white/90 backdrop-blur-2xl border-t border-gray-100 px-4 md:px-6 py-4 md:py-6 md:pb-10 z-[80]">
+          <nav className="fixed md:absolute bottom-0 left-0 right-0 md:inset-x-0 bg-white/95 backdrop-blur-2xl border-t border-gray-100 px-4 md:px-6 py-3 md:py-6 md:pb-10 z-[80] safe-area-inset-bottom">
             <div className="flex justify-around items-center max-w-md mx-auto md:max-w-none relative">
               {/* Store */}
               <button

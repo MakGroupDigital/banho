@@ -152,3 +152,40 @@ export const deleteProduct = async (id: string) => {
     throw error;
   }
 };
+
+// Récupérer les produits d'un utilisateur
+export const getUserProducts = async (userId: string): Promise<Product[]> => {
+  try {
+    const q = query(productsCollection, where('userId', '==', userId), orderBy('createdAt', 'desc'));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    } as Product));
+  } catch (error: any) {
+    console.error('Erreur lors de la récupération des produits utilisateur:', error);
+    
+    // Si l'erreur est liée à un index manquant, essayer sans orderBy
+    if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+      try {
+        const q = query(productsCollection, where('userId', '==', userId));
+        const querySnapshot = await getDocs(q);
+        const products = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Product));
+        
+        return products.sort((a, b) => {
+          const dateA = a.createdAt?.toMillis() || 0;
+          const dateB = b.createdAt?.toMillis() || 0;
+          return dateB - dateA;
+        });
+      } catch (fallbackError) {
+        console.error('Erreur lors de la récupération sans orderBy:', fallbackError);
+        throw fallbackError;
+      }
+    }
+    
+    throw error;
+  }
+};
