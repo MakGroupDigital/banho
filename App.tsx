@@ -457,6 +457,13 @@ export default function App() {
       return;
     }
 
+    // Vérifier le solde BanhoPay avant l'achat rapide
+    const currentBalance = await getUserBalance(currentUser.uid);
+    if (currentBalance < product.price) {
+      showError('Solde insuffisant', `Votre solde BanhoPay ($${currentBalance.toFixed(2)}) est insuffisant pour cet achat ($${product.price}). Utilisez le bouton "Acheter" pour choisir un autre moyen de paiement.`);
+      return;
+    }
+
     try {
       // Créer une commande
       const order = {
@@ -482,7 +489,7 @@ export default function App() {
 
       const createdOrder = await createOrder(order);
 
-      // Créer une transaction
+      // Créer une transaction d'achat pour l'acheteur (paiement BanhoPay)
       await createTransaction({
         userId: currentUser.uid,
         type: 'Achat',
@@ -490,6 +497,17 @@ export default function App() {
         description: `Achat: ${product.name}`,
         location: product.location
       });
+
+      // Créer une transaction de vente pour le vendeur (créditer son solde)
+      if (product.userId && product.userId !== currentUser.uid) {
+        await createTransaction({
+          userId: product.userId,
+          type: 'Vente',
+          amount: product.price,
+          description: `Vente: ${product.name}`,
+          location: product.location
+        });
+      }
 
       // Créer une notification pour l'acheteur
       await createOrderNotification(currentUser.uid, createdOrder.id || '', product.price);
@@ -3429,20 +3447,42 @@ export default function App() {
             paymentMethod: selectedPaymentMethod
           };
 
-          await createOrder(order);
+          const createdOrder = await createOrder(order);
 
-          // Créer une transaction
-          await createTransaction({
-            userId: currentUser.uid,
-            type: 'Achat',
-            amount: checkoutProduct.price,
-            description: `Achat: ${checkoutProduct.name}`,
-            location: deliveryCity
-          });
+          // Créer une transaction d'achat pour l'acheteur SEULEMENT si paiement BanhoPay
+          if (selectedPaymentMethod === 'banhopay') {
+            await createTransaction({
+              userId: currentUser.uid,
+              type: 'Achat',
+              amount: checkoutProduct.price,
+              description: `Achat: ${checkoutProduct.name}`,
+              location: deliveryCity
+            });
+
+            // Créer une transaction de vente pour le vendeur (créditer son solde BanhoPay)
+            if (checkoutProduct.userId && checkoutProduct.userId !== currentUser.uid) {
+              await createTransaction({
+                userId: checkoutProduct.userId,
+                type: 'Vente',
+                amount: checkoutProduct.price,
+                description: `Vente: ${checkoutProduct.name}`,
+                location: deliveryCity
+              });
+            }
+          }
+
+          // Créer une notification pour l'acheteur
+          await createOrderNotification(currentUser.uid, createdOrder.id || '', checkoutProduct.price);
+
+          // Créer une notification pour le vendeur (avec notification push)
+          if (checkoutProduct.userId && checkoutProduct.userId !== currentUser.uid) {
+            await createSaleNotification(checkoutProduct.userId, checkoutProduct.name, checkoutProduct.price, currentUser.displayName || 'Un client');
+          }
 
           // Recharger les données
           await loadUserOrders(currentUser.uid);
           await loadUserTransactions(currentUser.uid);
+          await loadUserNotifications(currentUser.uid);
 
           // Réinitialiser et fermer
           setShowCheckout(false);
@@ -4145,7 +4185,11 @@ export default function App() {
                     + Panier
                   </button>
                   <button 
-                    onClick={() => {
+                    onClick={async () => {
+                      // Recharger le solde avant d'ouvrir le checkout
+                      if (currentUser) {
+                        await loadUserTransactions(currentUser.uid);
+                      }
                       setCheckoutProduct(selectedProduct);
                       setShowCheckout(true);
                     }}

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nettoyage des Transactions BanhoPay</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 { color: #065f46; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .warning {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 0 8px 8px 0;
+    }
+    button {
+      background: #065f46;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover { background: #047857; }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    button.danger { background: #dc2626; }
+    button.danger:hover { background: #b91c1c; }
+    .transaction {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .transaction:last-child { border-bottom: none; }
+    .transaction.achat { background: #fef2f2; }
+    .transaction.vente { background: #f0fdf4; }
+    .transaction.depot { background: #eff6ff; }
+    .amount { font-weight: bold; font-size: 18px; }
+    .amount.negative { color: #dc2626; }
+    .amount.positive { color: #16a34a; }
+    #log {
+      background: #1f2937;
+      color: #10b981;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      max-height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .balance {
+      font-size: 32px;
+      font-weight: bold;
+      text-align: center;
+      padding: 20px;
+    }
+    .balance.negative { color: #dc2626; }
+    .balance.positive { color: #16a34a; }
+    input {
+      padding: 10px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 16px;
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    .checkbox-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      background: #fef2f2;
+      margin: 5px 0;
+      border-radius: 8px;
+    }
+    .checkbox-item input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧹 Nettoyage des Transactions BanhoPay</h1>
+  
+  <div class="warning">
+    <strong>⚠️ Attention :</strong> Cet outil permet de supprimer des transactions incorrectes. 
+    Utilisez-le avec précaution. Les suppressions sont irréversibles.
+  </div>
+
+  <div class="card">
+    <h2>1. Connexion</h2>
+    <p>Entrez l'ID de l'utilisateur dont vous voulez nettoyer les transactions :</p>
+    <input type="text" id="userId" placeholder="ID utilisateur (ex: abc123xyz...)">
+    <button onclick="loadTransactions()">Charger les transactions</button>
+  </div>
+
+  <div class="card" id="balanceCard" style="display:none;">
+    <h2>💰 Solde actuel</h2>
+    <div class="balance" id="currentBalance">$0.00</div>
+  </div>
+
+  <div class="card" id="transactionsCard" style="display:none;">
+    <h2>2. Transactions trouvées</h2>
+    <div id="summary"></div>
+    <div id="transactionsList"></div>
+  </div>
+
+  <div class="card" id="cleanupCard" style="display:none;">
+    <h2>3. Sélectionner les transactions à supprimer</h2>
+    <p>Cochez les transactions "Achat" que vous voulez supprimer (celles qui n'auraient pas dû être créées) :</p>
+    <div id="achatsToDelete"></div>
+    <br>
+    <button class="danger" onclick="deleteSelected()">🗑️ Supprimer les transactions sélectionnées</button>
+    <button onclick="selectAllAchats()">Tout sélectionner</button>
+    <button onclick="deselectAll()">Tout désélectionner</button>
+  </div>
+
+  <div class="card">
+    <h2>📋 Journal</h2>
+    <div id="log">En attente...</div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getFirestore, collection, query, where, getDocs, deleteDoc, doc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    // Configuration Firebase (même que dans ton projet)
+    const firebaseConfig = {
+      apiKey: "AIzaSyCOjLLkTCMmwxLpuGOcPNIWLBdGm1GcVCE",
+      authDomain: "banho-d7e5e.firebaseapp.com",
+      projectId: "banho-d7e5e",
+      storageBucket: "banho-d7e5e.firebasestorage.app",
+      messagingSenderId: "726820313498",
+      appId: "1:726820313498:web:e93a4b36f498f10e0e60a5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    let allTransactions = [];
+    let achatsTransactions = [];
+
+    function log(message) {
+      const logEl = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      logEl.textContent += `[${time}] ${message}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    window.loadTransactions = async function() {
+      const userId = document.getElementById('userId').value.trim();
+      if (!userId) {
+        alert('Veuillez entrer un ID utilisateur');
+        return;
+      }
+
+      log(`Chargement des transactions pour: ${userId}`);
+
+      try {
+        const q = query(collection(db, 'transactions'), where('userId', '==', userId));
+        const snapshot = await getDocs(q);
+        
+        allTransactions = [];
+        snapshot.forEach(doc => {
+          allTransactions.push({ id: doc.id, ...doc.data() });
+        });
+
+        log(`${allTransactions.length} transactions trouvées`);
+
+        // Calculer le solde
+        let balance = 0;
+        let achats = 0, ventes = 0, depots = 0, retraits = 0, envois = 0, receptions = 0;
+
+        allTransactions.forEach(t => {
+          const amount = Number(t.amount) || 0;
+          switch(t.type) {
+            case 'Dépôt': depots += amount; balance += amount; break;
+            case 'Vente': ventes += amount; balance += amount; break;
+            case 'Réception': receptions += amount; balance += amount; break;
+            case 'Retrait': retraits += amount; balance -= amount; break;
+            case 'Achat': achats += amount; balance -= amount; break;
+            case 'Envoi': envois += amount; balance -= amount; break;
+          }
+        });
+
+        // Afficher le solde
+        document.getElementById('balanceCard').style.display = 'block';
+        const balanceEl = document.getElementById('currentBalance');
+        balanceEl.textContent = `$${balance.toFixed(2)}`;
+        balanceEl.className = 'balance ' + (balance < 0 ? 'negative' : 'positive');
+
+        // Afficher le résumé
+        document.getElementById('transactionsCard').style.display = 'block';
+        document.getElementById('summary').innerHTML = `
+          <p><strong>Résumé :</strong></p>
+          <ul>
+            <li>Dépôts: <span class="amount positive">+$${depots.toFixed(2)}</span></li>
+            <li>Ventes: <span class="amount positive">+$${ventes.toFixed(2)}</span></li>
+            <li>Réceptions: <span class="amount positive">+$${receptions.toFixed(2)}</span></li>
+            <li>Achats: <span class="amount negative">-$${achats.toFixed(2)}</span></li>
+            <li>Retraits: <span class="amount negative">-$${retraits.toFixed(2)}</span></li>
+            <li>Envois: <span class="amount negative">-$${envois.toFixed(2)}</span></li>
+          </ul>
+        `;
+
+        // Afficher les transactions
+        let html = '';
+        allTransactions.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        
+        allTransactions.forEach(t => {
+          const date = t.createdAt ? new Date(t.createdAt.seconds * 1000).toLocaleString() : 'N/A';
+          const isNegative = ['Achat', 'Retrait', 'Envoi'].includes(t.type);
+          html += `
+            <div class="transaction ${t.type.toLowerCase()}">
+              <div>
+                <strong>${t.type}</strong><br>
+                <small>${t.description || 'N/A'}</small><br>
+                <small style="color:#666">${date}</small>
+              </div>
+              <div class="amount ${isNegative ? 'negative' : 'positive'}">
+                ${isNegative ? '-' : '+'}$${(t.amount || 0).toFixed(2)}
+              </div>
+            </div>
+          `;
+        });
+        document.getElementById('transactionsList').innerHTML = html;
+
+        // Afficher les achats à supprimer
+        achatsTransactions = allTransactions.filter(t => t.type === 'Achat');
+        if (achatsTransactions.length > 0) {
+          document.getElementById('cleanupCard').style.display = 'block';
+          let achatsHtml = '';
+          achatsTransactions.forEach((t, i) => {
+            const date = t.createdAt ? new Date(t.createdAt.seconds * 1000).toLocaleString() : 'N/A';
+            achatsHtml += `
+              <div class="checkbox-item">
+                <input type="checkbox" id="achat_${i}" data-id="${t.id}">
+                <label for="achat_${i}">
+                  <strong>-$${(t.amount || 0).toFixed(2)}</strong> - ${t.description || 'N/A'} (${date})
+                </label>
+              </div>
+            `;
+          });
+          document.getElementById('achatsToDelete').innerHTML = achatsHtml;
+          log(`${achatsTransactions.length} transactions "Achat" trouvées`);
+        } else {
+          document.getElementById('cleanupCard').style.display = 'none';
+          log('Aucune transaction "Achat" à nettoyer');
+        }
+
+      } catch (error) {
+        log(`ERREUR: ${error.message}`);
+        console.error(error);
+      }
+    };
+
+    window.selectAllAchats = function() {
+      document.querySelectorAll('#achatsToDelete input[type="checkbox"]').forEach(cb => cb.checked = true);
+    };
+
+    window.deselectAll = function() {
+      document.querySelectorAll('#achatsToDelete input[type="checkbox"]').forEach(cb => cb.checked = false);
+    };
+
+    window.deleteSelected = async function() {
+      const checkboxes = document.querySelectorAll('#achatsToDelete input[type="checkbox"]:checked');
+      if (checkboxes.length === 0) {
+        alert('Veuillez sélectionner au moins une transaction à supprimer');
+        return;
+      }
+
+      if (!confirm(`Êtes-vous sûr de vouloir supprimer ${checkboxes.length} transaction(s) ? Cette action est irréversible.`)) {
+        return;
+      }
+
+      log(`Suppression de ${checkboxes.length} transactions...`);
+
+      let deleted = 0;
+      for (const cb of checkboxes) {
+        const transactionId = cb.dataset.id;
+        try {
+          await deleteDoc(doc(db, 'transactions', transactionId));
+          log(`✓ Transaction ${transactionId} supprimée`);
+          deleted++;
+        } catch (error) {
+          log(`✗ Erreur suppression ${transactionId}: ${error.message}`);
+        }
+      }
+
+      log(`${deleted}/${checkboxes.length} transactions supprimées`);
+      alert(`${deleted} transaction(s) supprimée(s). Rechargez pour voir le nouveau solde.`);
+      
+      // Recharger
+      window.loadTransactions();
+    };
+
+    log('Outil de nettoyage prêt');
+  </script>
+</body>
+</html>

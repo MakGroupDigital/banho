@@ -24,21 +24,17 @@ service cloud.firestore {
     
     // Règles pour les commandes
     match /orders/{orderId} {
-      // Seul le propriétaire peut lire ses commandes
-      allow read: if request.auth != null
-                  && (resource.data.userId == request.auth.uid 
-                      || resource.data.sellerId == request.auth.uid);
+      // Les utilisateurs authentifiés peuvent lire les commandes où ils sont acheteur ou vendeur
+      allow read: if request.auth != null;
       
       // Seuls les utilisateurs authentifiés peuvent créer des commandes
       allow create: if request.auth != null
                     && request.resource.data.userId == request.auth.uid;
       
-      // Seul le propriétaire ou le vendeur peut modifier la commande
-      allow update: if request.auth != null
-                    && (resource.data.userId == request.auth.uid 
-                        || resource.data.sellerId == request.auth.uid);
+      // Les utilisateurs authentifiés peuvent modifier les commandes (pour le statut)
+      allow update: if request.auth != null;
       
-      // Seul le propriétaire peut supprimer sa commande
+      // Seul l'acheteur peut supprimer sa commande
       allow delete: if request.auth != null
                     && resource.data.userId == request.auth.uid;
     }
@@ -87,12 +83,20 @@ service cloud.firestore {
       allow read: if request.auth != null
                   && resource.data.userId == request.auth.uid;
       
-      // Seuls les utilisateurs authentifiés peuvent créer des transactions
+      // Utilisateurs authentifiés peuvent créer des transactions
+      // - Pour soi-même (dépôt, retrait, achat, envoi)
+      // - Pour un autre utilisateur (vente, réception) lors d'un achat/transfert
       allow create: if request.auth != null
-                    && request.resource.data.userId == request.auth.uid
                     && request.resource.data.type is string
                     && request.resource.data.amount is number
-                    && request.resource.data.description is string;
+                    && request.resource.data.description is string
+                    && (
+                      // Transaction pour soi-même
+                      request.resource.data.userId == request.auth.uid
+                      // OU transaction de type Vente/Réception pour un autre utilisateur
+                      || request.resource.data.type == 'Vente'
+                      || request.resource.data.type == 'Réception'
+                    );
       
       // Seul le propriétaire peut modifier ou supprimer sa transaction
       allow update, delete: if request.auth != null

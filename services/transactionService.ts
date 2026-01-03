@@ -147,20 +147,42 @@ export const getUserBalance = async (userId: string): Promise<number> => {
   try {
     const transactions = await getUserTransactions(userId);
     
-    return transactions.reduce((balance, transaction) => {
+    console.log('Calcul du solde pour userId:', userId);
+    console.log('Nombre de transactions:', transactions.length);
+    
+    const balance = transactions.reduce((acc, transaction) => {
+      const type = transaction.type?.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const amount = Number(transaction.amount) || 0;
+      
+      console.log('Transaction:', type, amount, transaction.description);
+      
+      // Types qui augmentent le solde
+      if (type === 'depot' || type === 'dépôt' || type === 'vente' || type === 'reception' || type === 'réception') {
+        return acc + amount;
+      }
+      // Types qui diminuent le solde
+      if (type === 'retrait' || type === 'achat' || type === 'envoi') {
+        return acc - amount;
+      }
+      
+      // Fallback avec les types originaux
       switch (transaction.type) {
         case 'Dépôt':
         case 'Vente':
         case 'Réception':
-          return balance + transaction.amount;
+          return acc + amount;
         case 'Retrait':
         case 'Achat':
         case 'Envoi':
-          return balance - transaction.amount;
+          return acc - amount;
         default:
-          return balance;
+          console.log('Type de transaction non reconnu:', transaction.type);
+          return acc;
       }
     }, 0);
+    
+    console.log('Solde calculé:', balance);
+    return balance;
   } catch (error) {
     console.error('Erreur lors du calcul du solde:', error);
     return 0;
