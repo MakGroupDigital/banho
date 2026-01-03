@@ -11,7 +11,8 @@ import { getUserOrders, getUserSales, createOrder, updateOrderStatus } from './s
 import { getUserTransactions, getUserBalance, createTransaction, sendMoney, depositMoney, withdrawMoney } from './services/transactionService';
 import { getUserFavorites, addFavorite, removeFavorite, isFavorite } from './services/favoriteService';
 import { uploadProfilePhoto, saveUserProfile, getUserProfile, getUserByBanhoPayNumber, initializeBanhoPayProfile } from './services/userService';
-import { getUserNotifications, createOrderNotification, createSaleNotification, markAsRead, markAllAsRead } from './services/notificationService';
+import { getUserNotifications, createOrderNotification, createSaleNotification, createStatusNotification, markAsRead, markAllAsRead } from './services/notificationService';
+import { initPushNotifications, requestNotificationPermission } from './services/pushNotificationService';
 import { sendPasswordResetEmail } from 'firebase/auth';
 
 // Composant Clock isolé pour éviter les re-renders du composant principal
@@ -42,6 +43,7 @@ export default function App() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authView, setAuthView] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [showAuthPage, setShowAuthPage] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -205,10 +207,6 @@ export default function App() {
   const handleWithdraw = async () => {
     if (!banhoPayAmount || parseFloat(banhoPayAmount) <= 0) {
       showError('Erreur', 'Veuillez entrer un montant valide');
-      return;
-    }
-    if (parseFloat(banhoPayAmount) > userBalance) {
-      showError('Erreur', 'Solde insuffisant');
       return;
     }
     const methodNames: Record<string, string> = {
@@ -496,9 +494,9 @@ export default function App() {
       // Créer une notification pour l'acheteur
       await createOrderNotification(currentUser.uid, createdOrder.id || '', product.price);
 
-      // Créer une notification pour le vendeur
+      // Créer une notification pour le vendeur (avec notification push)
       if (product.userId && product.userId !== currentUser.uid) {
-        await createSaleNotification(product.userId, product.name, product.price);
+        await createSaleNotification(product.userId, product.name, product.price, currentUser.displayName || 'Un client');
       }
 
       // Recharger les commandes, transactions et notifications
@@ -555,6 +553,7 @@ export default function App() {
         setCurrentUser(user);
         setIsAuthenticated(true);
         setShowOnboarding(false);
+        setShowAuthPage(false);
         hideError();
         
         // Charger les données de l'utilisateur
@@ -575,6 +574,14 @@ export default function App() {
         } catch (error) {
           console.error('Erreur initialisation BanhoPay:', error);
         }
+        
+        // Initialiser les notifications push
+        try {
+          await initPushNotifications();
+          await requestNotificationPermission();
+        } catch (error) {
+          console.error('Erreur initialisation notifications push:', error);
+        }
       } else {
         setCurrentUser(null);
         setIsAuthenticated(false);
@@ -594,10 +601,9 @@ export default function App() {
 
   // Charger les produits selon la condition sélectionnée
   useEffect(() => {
-    if (isAuthenticated) {
-      loadProducts();
-    }
-  }, [productCondition, isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Charger les produits même si l'utilisateur n'est pas connecté
+    loadProducts();
+  }, [productCondition]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fonction pour charger les produits
   const loadProducts = async () => {
@@ -970,7 +976,7 @@ export default function App() {
 
     const handleSkip = () => {
       setShowOnboarding(false);
-      setIsAuthenticated(true);
+      // Ne pas mettre isAuthenticated à true car l'utilisateur n'est pas connecté
     };
 
     return (
@@ -2010,6 +2016,41 @@ export default function App() {
     const [showBalance, setShowBalance] = useState(false);
     const [showPin, setShowPin] = useState(false);
 
+    // Rediriger vers la connexion si non authentifié
+    if (!isAuthenticated || !currentUser) {
+      // Afficher directement le formulaire de connexion
+      if (authView === 'login') {
+        return <LoginView />;
+      }
+      if (authView === 'signup') {
+        return <SignupView />;
+      }
+      // Par défaut, afficher un écran demandant de se connecter
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+          <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
+            <Wallet className="w-12 h-12 text-emerald-900" />
+          </div>
+          <h2 className="text-2xl font-black text-gray-900 mb-2 text-center">Connexion requise</h2>
+          <p className="text-gray-500 text-center mb-8 max-w-xs">
+            Connectez-vous pour accéder à votre portefeuille BanhoPay et gérer vos transactions.
+          </p>
+          <button
+            onClick={() => setAuthView('login')}
+            className="bg-emerald-900 text-white px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-transform"
+          >
+            Se connecter
+          </button>
+          <button
+            onClick={() => setAuthView('signup')}
+            className="mt-4 text-emerald-900 font-bold text-sm"
+          >
+            Créer un compte
+          </button>
+        </div>
+      );
+    }
+
     const handleFlipCard = (toFlipped: boolean) => {
       if (isFlipping) return;
       setIsFlipping(true);
@@ -2353,9 +2394,14 @@ export default function App() {
                 </button>
                 <button 
                   onClick={() => setActiveProfilePage('sales')}
-                  className="flex-1 py-3 bg-white border-2 border-gray-200 text-gray-600 rounded-xl font-bold text-sm"
+                  className="flex-1 py-3 bg-white border-2 border-gray-200 text-gray-600 rounded-xl font-bold text-sm relative"
                 >
                   Ventes ({userSales.length})
+                  {userSales.filter(s => s.status === 'En attente').length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+                      {userSales.filter(s => s.status === 'En attente').length}
+                    </span>
+                  )}
                 </button>
               </div>
               
@@ -2384,14 +2430,17 @@ export default function App() {
                         <span className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 ${
                           order.status === 'En attente' ? 'bg-yellow-100 text-yellow-700' :
                           order.status === 'En cours' ? 'bg-orange-100 text-orange-600' :
+                          order.status === 'Expédiée' ? 'bg-purple-100 text-purple-600' :
                           order.status === 'En route' ? 'bg-blue-100 text-blue-600' :
                           order.status === 'Livrée' ? 'bg-emerald-100 text-emerald-600' :
                           'bg-red-100 text-red-600'
                         }`}>
                           {order.status === 'En attente' && <ClockIcon className="w-3 h-3" />}
                           {order.status === 'En cours' && <Package className="w-3 h-3" />}
+                          {order.status === 'Expédiée' && <ArrowUpRight className="w-3 h-3" />}
                           {order.status === 'En route' && <Truck className="w-3 h-3" />}
                           {order.status === 'Livrée' && <Check className="w-3 h-3" />}
+                          {order.status === 'Annulée' && <X className="w-3 h-3" />}
                           {order.status}
                         </span>
                       </div>
@@ -2439,10 +2488,27 @@ export default function App() {
                 >
                   Achats ({userOrders.length})
                 </button>
-                <button className="flex-1 py-3 bg-emerald-900 text-white rounded-xl font-bold text-sm">
+                <button className="flex-1 py-3 bg-emerald-900 text-white rounded-xl font-bold text-sm relative">
                   Ventes ({userSales.length})
+                  {userSales.filter(s => s.status === 'En attente').length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-yellow-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold animate-pulse">
+                      {userSales.filter(s => s.status === 'En attente').length}
+                    </span>
+                  )}
                 </button>
               </div>
+              
+              {/* Info pour les ventes en attente */}
+              {userSales.filter(s => s.status === 'En attente').length > 0 && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4">
+                  <p className="text-sm text-yellow-800 font-bold">
+                    ⚠️ {userSales.filter(s => s.status === 'En attente').length} commande(s) en attente de traitement
+                  </p>
+                  <p className="text-xs text-yellow-600 mt-1">
+                    Cliquez sur les boutons ci-dessous pour mettre à jour le statut
+                  </p>
+                </div>
+              )}
               
               {/* Liste des ventes */}
               {userSales.length === 0 ? (
@@ -2472,14 +2538,17 @@ export default function App() {
                         <span className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 ${
                           sale.status === 'En attente' ? 'bg-yellow-100 text-yellow-700' :
                           sale.status === 'En cours' ? 'bg-orange-100 text-orange-600' :
+                          sale.status === 'Expédiée' ? 'bg-purple-100 text-purple-600' :
                           sale.status === 'En route' ? 'bg-blue-100 text-blue-600' :
                           sale.status === 'Livrée' ? 'bg-emerald-100 text-emerald-600' :
                           'bg-red-100 text-red-600'
                         }`}>
                           {sale.status === 'En attente' && <ClockIcon className="w-3 h-3" />}
                           {sale.status === 'En cours' && <Package className="w-3 h-3" />}
+                          {sale.status === 'Expédiée' && <ArrowUpRight className="w-3 h-3" />}
                           {sale.status === 'En route' && <Truck className="w-3 h-3" />}
                           {sale.status === 'Livrée' && <Check className="w-3 h-3" />}
+                          {sale.status === 'Annulée' && <X className="w-3 h-3" />}
                           {sale.status}
                         </span>
                       </div>
@@ -2505,20 +2574,22 @@ export default function App() {
                       {/* Boutons de changement de statut */}
                       {sale.status !== 'Livrée' && sale.status !== 'Annulée' && (
                         <div className="border-t pt-3 mt-3">
-                          <p className="text-xs text-gray-500 mb-2">Changer le statut :</p>
+                          <p className="text-xs text-gray-500 mb-2 font-bold">📦 Modifier le statut :</p>
                           <div className="flex gap-2 flex-wrap">
                             {sale.status === 'En attente' && (
                               <button
                                 onClick={async () => {
                                   try {
-                                    await updateOrderStatus(sale.id!, 'En cours');
-                                    loadUserSales(currentUser?.uid);
-                                    showError('Statut mis à jour', 'Commande en cours de préparation');
+                                    const productName = sale.items[0]?.productName;
+                                    await updateOrderStatus(sale.id!, 'En cours', (sale as any).userId, productName);
+                                    await loadUserSales(currentUser?.uid);
+                                    showError('✅ Statut mis à jour', 'Commande en cours de préparation');
                                   } catch (error) {
+                                    console.error('Erreur:', error);
                                     showError('Erreur', 'Impossible de mettre à jour le statut');
                                   }
                                 }}
-                                className="px-3 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                                className="px-3 py-2 bg-orange-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform"
                               >
                                 <Package className="w-3 h-3" /> En cours
                               </button>
@@ -2527,14 +2598,34 @@ export default function App() {
                               <button
                                 onClick={async () => {
                                   try {
-                                    await updateOrderStatus(sale.id!, 'En route');
-                                    loadUserSales(currentUser?.uid);
-                                    showError('Statut mis à jour', 'Commande en route');
+                                    const productName = sale.items[0]?.productName;
+                                    await updateOrderStatus(sale.id!, 'Expédiée', (sale as any).userId, productName);
+                                    await loadUserSales(currentUser?.uid);
+                                    showError('✅ Statut mis à jour', 'Commande expédiée !');
                                   } catch (error) {
+                                    console.error('Erreur:', error);
                                     showError('Erreur', 'Impossible de mettre à jour le statut');
                                   }
                                 }}
-                                className="px-3 py-2 bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                                className="px-3 py-2 bg-purple-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform"
+                              >
+                                <ArrowUpRight className="w-3 h-3" /> Expédiée
+                              </button>
+                            )}
+                            {(sale.status === 'En attente' || sale.status === 'En cours' || sale.status === 'Expédiée') && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const productName = sale.items[0]?.productName;
+                                    await updateOrderStatus(sale.id!, 'En route', (sale as any).userId, productName);
+                                    await loadUserSales(currentUser?.uid);
+                                    showError('✅ Statut mis à jour', 'Commande en route');
+                                  } catch (error) {
+                                    console.error('Erreur:', error);
+                                    showError('Erreur', 'Impossible de mettre à jour le statut');
+                                  }
+                                }}
+                                className="px-3 py-2 bg-blue-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform"
                               >
                                 <Truck className="w-3 h-3" /> En route
                               </button>
@@ -2542,18 +2633,45 @@ export default function App() {
                             <button
                               onClick={async () => {
                                 try {
-                                  await updateOrderStatus(sale.id!, 'Livrée');
-                                  loadUserSales(currentUser?.uid);
-                                  showError('Statut mis à jour', 'Commande livrée !');
+                                  const productName = sale.items[0]?.productName;
+                                  await updateOrderStatus(sale.id!, 'Livrée', (sale as any).userId, productName);
+                                  await loadUserSales(currentUser?.uid);
+                                  showError('✅ Statut mis à jour', 'Commande livrée !');
                                 } catch (error) {
+                                  console.error('Erreur:', error);
                                   showError('Erreur', 'Impossible de mettre à jour le statut');
                                 }
                               }}
-                              className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                              className="px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform"
                             >
                               <Check className="w-3 h-3" /> Livrée
                             </button>
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const productName = sale.items[0]?.productName;
+                                  await updateOrderStatus(sale.id!, 'Annulée', (sale as any).userId, productName);
+                                  await loadUserSales(currentUser?.uid);
+                                  showError('✅ Statut mis à jour', 'Commande annulée');
+                                } catch (error) {
+                                  console.error('Erreur:', error);
+                                  showError('Erreur', 'Impossible de mettre à jour le statut');
+                                }
+                              }}
+                              className="px-3 py-2 bg-red-500 text-white rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform"
+                            >
+                              <X className="w-3 h-3" /> Annuler
+                            </button>
                           </div>
+                        </div>
+                      )}
+                      
+                      {/* Message si commande terminée */}
+                      {(sale.status === 'Livrée' || sale.status === 'Annulée') && (
+                        <div className="border-t pt-3 mt-3">
+                          <p className={`text-xs font-bold ${sale.status === 'Livrée' ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {sale.status === 'Livrée' ? '✅ Commande terminée' : '❌ Commande annulée'}
+                          </p>
                         </div>
                       )}
                       
@@ -3096,7 +3214,23 @@ export default function App() {
       return renderProfilePage();
     }
 
-    // Sinon afficher la page principale du profil
+    // Si l'utilisateur n'est pas connecté, afficher la page de connexion/inscription
+    if (!isAuthenticated || !currentUser) {
+      // Afficher le formulaire de connexion
+      if (authView === 'login') {
+        return <LoginView />;
+      }
+      // Afficher le formulaire d'inscription
+      if (authView === 'signup') {
+        return <SignupView />;
+      }
+      // Afficher le formulaire de mot de passe oublié
+      if (authView === 'forgot') {
+        return <ForgotPasswordView />;
+      }
+    }
+
+    // Sinon afficher la page principale du profil (utilisateur connecté)
     return (
       <div className="min-h-screen pb-40 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="p-6 md:p-8">
@@ -3586,6 +3720,47 @@ export default function App() {
 
     // Si la page d'ajout est ouverte
     if (showAddProduct) {
+      // Vérifier si l'utilisateur est connecté
+      if (!isAuthenticated || !currentUser) {
+        // Afficher directement le formulaire de connexion
+        if (authView === 'login') {
+          return <LoginView />;
+        }
+        if (authView === 'signup') {
+          return <SignupView />;
+        }
+        // Par défaut, afficher un écran demandant de se connecter
+        return (
+          <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+            <div className="w-24 h-24 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
+              <Camera className="w-12 h-12 text-emerald-900" />
+            </div>
+            <h2 className="text-2xl font-black text-gray-900 mb-2 text-center">Connexion requise</h2>
+            <p className="text-gray-500 text-center mb-8 max-w-xs">
+              Connectez-vous pour publier vos produits et services sur Banho.
+            </p>
+            <button
+              onClick={() => setAuthView('login')}
+              className="bg-emerald-900 text-white px-8 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-transform"
+            >
+              Se connecter
+            </button>
+            <button
+              onClick={() => setAuthView('signup')}
+              className="mt-4 text-emerald-900 font-bold text-sm"
+            >
+              Créer un compte
+            </button>
+            <button
+              onClick={() => setShowAddProduct(false)}
+              className="mt-6 text-gray-400 text-sm"
+            >
+              Annuler
+            </button>
+          </div>
+        );
+      }
+
       // Catégories de produits
       const productCategories = [
         'Électronique', 
@@ -3985,8 +4160,56 @@ export default function App() {
                 </div>
               )}
               <button 
-                onClick={() => {
-                  alert('Partager ce produit');
+                onClick={async () => {
+                  const shareText = `🛒 ${selectedProduct.name}\n💰 Prix: $${selectedProduct.price}\n📍 ${selectedProduct.location || 'Disponible sur Banho'}\n\n👉 Téléchargez Banho pour acheter: ${window.location.origin}`;
+                  
+                  try {
+                    // Sur mobile, essayer de partager avec l'image
+                    if (navigator.share) {
+                      // Essayer de récupérer l'image pour la partager
+                      try {
+                        const response = await fetch(selectedProduct.image);
+                        const blob = await response.blob();
+                        const file = new File([blob], 'produit.jpg', { type: 'image/jpeg' });
+                        
+                        // Vérifier si le partage de fichiers est supporté
+                        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                          await navigator.share({
+                            title: selectedProduct.name,
+                            text: shareText,
+                            files: [file]
+                          });
+                        } else {
+                          // Partager sans image
+                          await navigator.share({
+                            title: selectedProduct.name,
+                            text: shareText,
+                            url: window.location.origin
+                          });
+                        }
+                      } catch {
+                        // Si erreur avec l'image, partager juste le texte
+                        await navigator.share({
+                          title: selectedProduct.name,
+                          text: shareText,
+                          url: window.location.origin
+                        });
+                      }
+                    } else {
+                      // Desktop: copier le texte
+                      await navigator.clipboard.writeText(shareText);
+                      showError('Copié !', 'Les informations du produit ont été copiées.');
+                    }
+                  } catch (error: any) {
+                    if (error.name !== 'AbortError') {
+                      try {
+                        await navigator.clipboard.writeText(shareText);
+                        showError('Copié !', 'Les informations du produit ont été copiées.');
+                      } catch {
+                        showError('Erreur', 'Impossible de partager ce produit.');
+                      }
+                    }
+                  }
                 }}
                 className="w-14 h-14 bg-orange-500 text-white rounded-2xl font-black active:scale-95 transition-transform shadow-lg flex items-center justify-center"
               >
@@ -4071,8 +4294,8 @@ export default function App() {
     );
   }
 
-  // Si non authentifié, afficher les pages d'authentification
-  if (!isAuthenticated) {
+  // Si non authentifié ET qu'on veut voir les pages d'auth
+  if (!isAuthenticated && showAuthPage) {
     return (
       <div className="min-h-screen bg-neutral-900 flex items-center justify-center p-0 md:p-4">
         {/* iPhone Frame Container - Only on desktop */}
@@ -4293,30 +4516,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Mobile Status Bar - Only on mobile */}
-        <div className="md:hidden h-12 bg-white flex justify-between items-center px-6 text-sm font-bold text-gray-400 border-b border-gray-100">
-          <Clock />
-          <span className="text-emerald-900 font-black">Banho</span>
-          <div className="flex items-center gap-1">
-            <span className="text-xs">{batteryLevel}%</span>
-            <div className="w-6 h-3 border border-gray-400 rounded-sm relative">
-              <div 
-                className={`h-full rounded-sm transition-all ${
-                  batteryLevel > 20 ? 'bg-green-500' : 'bg-red-500'
-                } ${isCharging ? 'animate-pulse' : ''}`}
-                style={{ width: `${batteryLevel}%` }}
-              ></div>
-              {isCharging && (
-                <svg className="absolute inset-0 w-full h-full text-white" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                </svg>
-              )}
-            </div>
-          </div>
-        </div>
-
         {/* Content Area */}
-        <div className="h-[calc(100vh-48px)] md:h-full w-full overflow-y-auto overflow-x-hidden bg-gray-50 md:pt-12 pb-24 md:pb-28" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="h-screen md:h-full w-full overflow-y-auto overflow-x-hidden bg-gray-50 md:pt-12 pb-24 md:pb-28" style={{ WebkitOverflowScrolling: 'touch' }}>
           {renderContent()}
           
           {/* Spacer pour la navigation en bas */}

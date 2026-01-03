@@ -7,6 +7,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { createTransferNotification } from './notificationService';
 
 export interface Transaction {
   id?: string;
@@ -52,11 +53,7 @@ export const sendMoney = async (
   amount: number
 ) => {
   try {
-    const senderBalance = await getUserBalance(senderId);
-    if (senderBalance < amount) {
-      throw new Error('Solde insuffisant');
-    }
-
+    // Transaction pour l'envoyeur
     await createTransaction({
       userId: senderId,
       type: 'Envoi',
@@ -67,6 +64,7 @@ export const sendMoney = async (
       recipientBanhoPayNumber
     });
 
+    // Transaction pour le destinataire
     await createTransaction({
       userId: recipientId,
       type: 'Réception',
@@ -76,6 +74,9 @@ export const sendMoney = async (
       senderName,
       senderBanhoPayNumber
     });
+
+    // Envoyer une notification push au destinataire
+    await createTransferNotification(recipientId, amount, senderName);
 
     return true;
   } catch (error) {
@@ -103,11 +104,6 @@ export const depositMoney = async (userId: string, amount: number, method: strin
 // Retrait d'argent
 export const withdrawMoney = async (userId: string, amount: number, method: string) => {
   try {
-    const balance = await getUserBalance(userId);
-    if (balance < amount) {
-      throw new Error('Solde insuffisant');
-    }
-
     await createTransaction({
       userId,
       type: 'Retrait',

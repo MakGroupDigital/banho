@@ -9,6 +9,7 @@ import {
   Timestamp 
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { createStatusNotification } from './notificationService';
 
 export interface OrderItem {
   productId: string;
@@ -28,7 +29,7 @@ export interface Order {
   buyerEmail: string;
   items: OrderItem[];
   total: number;
-  status: 'En attente' | 'En cours' | 'En route' | 'Livrée' | 'Annulée';
+  status: 'En attente' | 'En cours' | 'Expédiée' | 'En route' | 'Livrée' | 'Annulée';
   createdAt?: Timestamp;
   updatedAt?: Timestamp;
   deliveryAddress?: string;
@@ -121,8 +122,13 @@ export const getUserSales = async (userId: string): Promise<Order[]> => {
   }
 };
 
-// Mettre à jour le statut d'une commande
-export const updateOrderStatus = async (orderId: string, status: Order['status']) => {
+// Mettre à jour le statut d'une commande (avec notification à l'acheteur)
+export const updateOrderStatus = async (
+  orderId: string, 
+  status: Order['status'], 
+  buyerId?: string, 
+  productName?: string
+) => {
   try {
     const orderRef = doc(db, 'orders', orderId);
     await updateDoc(orderRef, { 
@@ -130,6 +136,11 @@ export const updateOrderStatus = async (orderId: string, status: Order['status']
       updatedAt: Timestamp.now()
     });
     console.log('Statut mis à jour:', orderId, status);
+    
+    // Envoyer une notification push à l'acheteur
+    if (buyerId) {
+      await createStatusNotification(buyerId, orderId, status, productName);
+    }
   } catch (error) {
     console.error('Erreur lors de la mise à jour du statut:', error);
     throw error;
