@@ -13,6 +13,7 @@ import { getUserFavorites, addFavorite, removeFavorite, isFavorite } from './ser
 import { uploadProfilePhoto, saveUserProfile, getUserProfile, getUserByBanhoPayNumber, initializeBanhoPayProfile } from './services/userService';
 import { getUserNotifications, createOrderNotification, createSaleNotification, createStatusNotification, markAsRead, markAllAsRead } from './services/notificationService';
 import { initPushNotifications, requestNotificationPermission } from './services/pushNotificationService';
+import { generateSalesReport } from './services/reportService';
 import { sendPasswordResetEmail } from 'firebase/auth';
 
 // Composant Clock isolé pour éviter les re-renders du composant principal
@@ -30,6 +31,87 @@ const Clock = memo(() => {
     </span>
   );
 });
+
+// Composant Pull-to-Refresh
+interface PullToRefreshProps {
+  onRefresh: () => Promise<void>;
+  isRefreshing: boolean;
+  children: React.ReactNode;
+}
+
+const PullToRefresh: React.FC<PullToRefreshProps> = ({ onRefresh, isRefreshing, children }) => {
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+  const startY = React.useRef(0);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const threshold = 80;
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (containerRef.current && containerRef.current.scrollTop === 0) {
+      startY.current = e.touches[0].clientY;
+      setIsPulling(true);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isPulling || isRefreshing) return;
+    
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - startY.current;
+    
+    if (diff > 0 && containerRef.current && containerRef.current.scrollTop === 0) {
+      setPullDistance(Math.min(diff * 0.5, threshold * 1.5));
+    }
+  };
+
+  const handleTouchEnd = async () => {
+    if (pullDistance >= threshold && !isRefreshing) {
+      await onRefresh();
+    }
+    setPullDistance(0);
+    setIsPulling(false);
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-full overflow-y-auto"
+      style={{ WebkitOverflowScrolling: 'touch' }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Indicateur de pull */}
+      <div 
+        className="flex items-center justify-center transition-all duration-200 overflow-hidden"
+        style={{ 
+          height: pullDistance > 0 || isRefreshing ? Math.max(pullDistance, isRefreshing ? 60 : 0) : 0,
+          opacity: pullDistance > 0 || isRefreshing ? 1 : 0
+        }}
+      >
+        <div className={`flex items-center gap-2 ${isRefreshing ? 'animate-pulse' : ''}`}>
+          {isRefreshing ? (
+            <>
+              <div className="w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm font-bold text-emerald-600">Actualisation...</span>
+            </>
+          ) : pullDistance >= threshold ? (
+            <>
+              <ArrowUp className="w-5 h-5 text-emerald-600" />
+              <span className="text-sm font-bold text-emerald-600">Relâchez pour actualiser</span>
+            </>
+          ) : (
+            <>
+              <ArrowDown className="w-5 h-5 text-gray-400" />
+              <span className="text-sm font-bold text-gray-400">Tirez pour actualiser</span>
+            </>
+          )}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+};
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -131,6 +213,36 @@ export default function App() {
   const [deliveryPhone, setDeliveryPhone] = useState('');
   const [deliveryNotes, setDeliveryNotes] = useState('');
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // État pour le pull-to-refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+
+  // Fonction de rafraîchissement global
+  const refreshAllData = useCallback(async () => {
+    if (!currentUser || isRefreshing) return;
+    
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        loadProducts(),
+        loadUserOrders(currentUser.uid),
+        loadUserSales(currentUser.uid),
+        loadUserTransactions(currentUser.uid),
+        loadUserNotifications(currentUser.uid),
+        loadUserFavorites(currentUser.uid),
+        loadUserProducts(currentUser.uid)
+      ]);
+      console.log('Données rafraîchies avec succès');
+    } catch (error) {
+      console.error('Erreur lors du rafraîchissement:', error);
+    } finally {
+      setIsRefreshing(false);
+      setPullDistance(0);
+      setIsPulling(false);
+    }
+  }, [currentUser, isRefreshing]);
 
   const showError = (title: string, message: string) => {
     setErrorDialog({ show: true, title, message });
@@ -538,6 +650,34 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [showSplash]);
+
+  // Rafraîchir les données quand l'app revient au premier plan
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && currentUser && !isRefreshing) {
+        console.log('App revenue au premier plan, rafraîchissement des données...');
+        refreshAllData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [currentUser, isRefreshing, refreshAllData]);
+
+  // Rafraîchir les données périodiquement (toutes les 30 secondes)
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadUserNotifications(currentUser.uid);
+        loadUserSales(currentUser.uid);
+        loadUserOrders(currentUser.uid);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // Récupérer le niveau de batterie réel
   useEffect(() => {
@@ -2402,6 +2542,7 @@ export default function App() {
     switch (activeProfilePage) {
       case 'orders':
         return (
+          <PullToRefresh onRefresh={refreshAllData} isRefreshing={isRefreshing}>
           <div className="min-h-screen bg-gray-50 pb-48" style={{ paddingBottom: '200px' }}>
             <PageHeader title="Mes commandes" />
             <div className="px-6">
@@ -2491,15 +2632,17 @@ export default function App() {
               )}
             </div>
           </div>
+          </PullToRefresh>
         );
 
       case 'sales':
         return (
+          <PullToRefresh onRefresh={refreshAllData} isRefreshing={isRefreshing}>
           <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Mes ventes" />
             <div className="px-6">
               {/* Tabs */}
-              <div className="flex gap-2 mb-6">
+              <div className="flex gap-2 mb-4">
                 <button 
                   onClick={() => setActiveProfilePage('orders')}
                   className="flex-1 py-3 bg-white border-2 border-gray-200 text-gray-600 rounded-xl font-bold text-sm"
@@ -2515,6 +2658,34 @@ export default function App() {
                   )}
                 </button>
               </div>
+
+              {/* Bouton télécharger le rapport */}
+              {userSales.length > 0 && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await generateSalesReport(
+                        userSales,
+                        {
+                          displayName: currentUser?.displayName || 'Vendeur',
+                          email: currentUser?.email || '',
+                          banhoPayNumber: banhoPayNumber,
+                          photoURL: currentUser?.photoURL
+                        },
+                        userBalance
+                      );
+                      showError('Rapport généré !', 'Le rapport PDF de vos ventes a été téléchargé avec succès.');
+                    } catch (error) {
+                      console.error('Erreur génération rapport:', error);
+                      showError('Erreur', 'Impossible de générer le rapport. Veuillez réessayer.');
+                    }
+                  }}
+                  className="w-full mb-4 py-3 bg-gradient-to-r from-emerald-600 to-emerald-800 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-transform"
+                >
+                  <Download className="w-5 h-5" />
+                  Télécharger le rapport de ventes (PDF)
+                </button>
+              )}
               
               {/* Info pour les ventes en attente */}
               {userSales.filter(s => s.status === 'En attente').length > 0 && (
@@ -2703,10 +2874,12 @@ export default function App() {
               )}
             </div>
           </div>
+          </PullToRefresh>
         );
 
       case 'my-products':
         return (
+          <PullToRefresh onRefresh={refreshAllData} isRefreshing={isRefreshing}>
           <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Mes produits" />
             <div className="px-6">
@@ -2784,10 +2957,12 @@ export default function App() {
               )}
             </div>
           </div>
+          </PullToRefresh>
         );
 
       case 'favorites':
         return (
+          <PullToRefresh onRefresh={refreshAllData} isRefreshing={isRefreshing}>
           <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Mes favoris" />
             <div className="px-6">
@@ -2824,10 +2999,12 @@ export default function App() {
               )}
             </div>
           </div>
+          </PullToRefresh>
         );
 
       case 'wallet':
         return (
+          <PullToRefresh onRefresh={refreshAllData} isRefreshing={isRefreshing}>
           <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="BanhoPay & Paiements" />
             <div className="px-6">
@@ -2889,6 +3066,7 @@ export default function App() {
               )}
             </div>
           </div>
+          </PullToRefresh>
         );
 
       case 'edit-profile':
@@ -3002,6 +3180,7 @@ export default function App() {
 
       case 'notifications':
         return (
+          <PullToRefresh onRefresh={refreshAllData} isRefreshing={isRefreshing}>
           <div className="min-h-screen bg-gray-50" style={{ paddingBottom: "200px" }}>
             <PageHeader title="Notifications" />
             <div className="px-6">
@@ -3078,6 +3257,7 @@ export default function App() {
               )}
             </div>
           </div>
+          </PullToRefresh>
         );
 
       case 'security':
